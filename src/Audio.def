@@ -1,0 +1,22 @@
+DEFINITION MODULE Audio;
+
+FROM SYSTEM IMPORT CARDINAL8;
+
+TYPE
+  Effect = (Laser, Explosion, Hit, Power, StartJingle, Hurt, BossPulse, MenuBlip);
+  MusicMode = (Silent, SynthTrack, ThemeTrack);
+
+PROCEDURE Init() : BOOLEAN;
+PROCEDURE Shutdown;
+PROCEDURE Update;
+PROCEDURE Play(effect : Effect);
+PROCEDURE RegisterSample(slot : CARDINAL; data : ARRAY OF CARDINAL8; length : CARDINAL);
+PROCEDURE PlaySample(slot, volume : CARDINAL);
+PROCEDURE SetMusic(enabled : BOOLEAN);
+PROCEDURE SetMusicMode(mode : MusicMode);
+PROCEDURE SetIntensity(level : CARDINAL);
+PROCEDURE SetMasterVolume(volume : CARDINAL);
+PROCEDURE IsAvailable() : BOOLEAN;
+PROCEDURE ThemeMeter(band : CARDINAL) : CARDINAL;
+
+END Audio.

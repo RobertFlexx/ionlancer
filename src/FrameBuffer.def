@@ -1,0 +1,26 @@
+DEFINITION MODULE FrameBuffer;
+
+FROM SYSTEM IMPORT ADDRESS;
+
+CONST
+  Width = 320;
+  Height = 180;
+
+PROCEDURE Clear(colour : CARDINAL);
+PROCEDURE PutPixel(x, y : INTEGER; colour : CARDINAL);
+PROCEDURE GetPixel(x, y : INTEGER) : CARDINAL;
+PROCEDURE HLine(x1, x2, y : INTEGER; colour : CARDINAL);
+PROCEDURE VLine(x, y1, y2 : INTEGER; colour : CARDINAL);
+PROCEDURE FillRect(x, y, w, h : INTEGER; colour : CARDINAL);
+PROCEDURE Rect(x, y, w, h : INTEGER; colour : CARDINAL);
+PROCEDURE Line(x0, y0, x1, y1 : INTEGER; colour : CARDINAL);
+PROCEDURE DrawChar(x, y : INTEGER; c : CHAR; colour : CARDINAL; scale : CARDINAL);
+PROCEDURE DrawText(x, y : INTEGER; text : ARRAY OF CHAR; colour, scale : CARDINAL);
+PROCEDURE TextWidth(text : ARRAY OF CHAR; scale : CARDINAL) : CARDINAL;
+PROCEDURE SetPalette(index, r, g, b : CARDINAL);
+PROCEDURE PaletteRGB(index : CARDINAL; VAR r, g, b : CARDINAL);
+PROCEDURE Convert;
+PROCEDURE RGBAAddress() : ADDRESS;
+PROCEDURE RGBAPitch() : INTEGER;
+
+END FrameBuffer.

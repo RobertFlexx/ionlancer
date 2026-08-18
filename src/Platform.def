@@ -1,0 +1,14 @@
+DEFINITION MODULE Platform;
+
+PROCEDURE Open() : BOOLEAN;
+PROCEDURE Close;
+PROCEDURE Poll;
+PROCEDURE Present;
+PROCEDURE Ticks() : CARDINAL;
+PROCEDURE Sleep(ms : CARDINAL);
+PROCEDURE ShouldQuit() : BOOLEAN;
+PROCEDURE RequestQuit;
+PROCEDURE ToggleFullscreen;
+PROCEDURE IsFullscreen() : BOOLEAN;
+
+END Platform.

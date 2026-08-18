@@ -1,0 +1,18 @@
+DEFINITION MODULE Visuals;
+
+PROCEDURE DrawPlayer(x, y : INTEGER; frame : CARDINAL; bank : INTEGER;
+                     shield : BOOLEAN);
+PROCEDURE DrawEnemy(kind : CARDINAL; x, y : INTEGER; frame : CARDINAL);
+PROCEDURE DrawBoss(kind : CARDINAL; x, y : INTEGER; frame, health, maxHealth : CARDINAL);
+PROCEDURE DrawPlayerShot(x, y : INTEGER; frame, power : CARDINAL);
+PROCEDURE DrawEnemyShot(x, y : INTEGER; frame : CARDINAL);
+PROCEDURE DrawPowerup(kind : CARDINAL; x, y : INTEGER; frame : CARDINAL);
+PROCEDURE DrawParticle(x, y : INTEGER; life, kind : CARDINAL);
+PROCEDURE DrawLogo(tick : CARDINAL);
+PROCEDURE DrawTitleArt(x, y : INTEGER; frame : CARDINAL);
+PROCEDURE DrawPlayerPreview(x, y : INTEGER; frame : CARDINAL);
+PROCEDURE DrawMusicTag(x, y : INTEGER; low, lowMid, highMid, high : CARDINAL);
+PROCEDURE DrawPanel(x, y, w, h : INTEGER; bright : BOOLEAN);
+PROCEDURE DrawHeart(x, y : INTEGER; filled : BOOLEAN);
+
+END Visuals.

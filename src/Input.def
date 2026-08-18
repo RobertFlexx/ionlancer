@@ -1,0 +1,15 @@
+DEFINITION MODULE Input;
+
+TYPE
+  Action = (Left, Right, Up, Down, Fire, AltFire, Start, Pause,
+            Menu, Fullscreen, Back);
+
+PROCEDURE Init;
+PROCEDURE Shutdown;
+PROCEDURE Poll;
+PROCEDURE Held(action : Action) : BOOLEAN;
+PROCEDURE Pressed(action : Action) : BOOLEAN;
+PROCEDURE TakePressed(action : Action) : BOOLEAN;
+PROCEDURE ClearPressed;
+
+END Input.

@@ -1,0 +1,105 @@
+DEFINITION MODULE FOR "C" SDL2;
+
+FROM SYSTEM IMPORT ADDRESS, INTEGER16, CARDINAL8, CARDINAL16, CARDINAL32, CARDINAL64;
+
+EXPORT UNQUALIFIED
+  SDL_Window, SDL_Renderer, SDL_Texture, SDL_GameController, SDL_AudioDeviceID,
+  SDL_Event, SDL_Rect, SDL_KeyState, SDL_KeyStatePtr, SDL_AudioSpec,
+  SDL_Init, SDL_Quit,
+  SDL_CreateWindow, SDL_DestroyWindow, SDL_SetWindowMinimumSize,
+  SDL_SetWindowFullscreen, SDL_GetWindowFlags,
+  SDL_CreateRenderer, SDL_DestroyRenderer, SDL_GetRendererOutputSize,
+  SDL_SetRenderDrawColor, SDL_RenderClear,
+  SDL_RenderCopy, SDL_RenderPresent,
+  SDL_CreateTexture, SDL_DestroyTexture, SDL_UpdateTexture, SDL_SetTextureBlendMode, SDL_SetTextureScaleMode,
+  SDL_PollEvent, SDL_PumpEvents, SDL_GetKeyboardState,
+  SDL_NumJoysticks, SDL_IsGameController, SDL_GameControllerOpen,
+  SDL_GameControllerClose, SDL_GameControllerGetAxis, SDL_GameControllerGetButton,
+  SDL_GetTicks, SDL_Delay,
+  SDL_OpenAudioDevice, SDL_CloseAudioDevice, SDL_PauseAudioDevice,
+  SDL_QueueAudio, SDL_GetQueuedAudioSize, SDL_ClearQueuedAudio;
+
+TYPE
+  SDL_Window = ADDRESS;
+  SDL_Renderer = ADDRESS;
+  SDL_Texture = ADDRESS;
+  SDL_GameController = ADDRESS;
+  SDL_AudioDeviceID = CARDINAL32;
+
+  SDL_Rect = RECORD
+    x, y, w, h : INTEGER
+  END;
+
+  SDL_Event = RECORD
+    kind      : CARDINAL32;
+    timestamp : CARDINAL32;
+    padding   : ARRAY [0..5] OF CARDINAL64
+  END;
+  SDL_KeyState = ARRAY [0..511] OF CARDINAL8;
+  SDL_KeyStatePtr = POINTER TO SDL_KeyState;
+
+  SDL_AudioSpec = RECORD
+    freq      : INTEGER;
+    format    : CARDINAL16;
+    channels  : CARDINAL8;
+    silence   : CARDINAL8;
+    samples   : CARDINAL16;
+    padding   : CARDINAL16;
+    size      : CARDINAL32;
+    callback  : ADDRESS;
+    userdata  : ADDRESS
+  END;
+
+PROCEDURE SDL_Init(flags : CARDINAL32) : INTEGER;
+PROCEDURE SDL_Quit;
+
+PROCEDURE SDL_CreateWindow(title : ADDRESS; x, y, w, h : INTEGER;
+                           flags : CARDINAL32) : SDL_Window;
+PROCEDURE SDL_DestroyWindow(window : SDL_Window);
+PROCEDURE SDL_SetWindowMinimumSize(window : SDL_Window; minW, minH : INTEGER);
+PROCEDURE SDL_SetWindowFullscreen(window : SDL_Window; flags : CARDINAL32) : [ INTEGER ];
+PROCEDURE SDL_GetWindowFlags(window : SDL_Window) : CARDINAL32;
+
+PROCEDURE SDL_CreateRenderer(window : SDL_Window; index : INTEGER;
+                             flags : CARDINAL32) : SDL_Renderer;
+PROCEDURE SDL_DestroyRenderer(renderer : SDL_Renderer);
+PROCEDURE SDL_GetRendererOutputSize(renderer : SDL_Renderer; VAR w, h : INTEGER) : INTEGER;
+PROCEDURE SDL_SetRenderDrawColor(renderer : SDL_Renderer;
+                                 r, g, b, a : CARDINAL8) : [ INTEGER ];
+PROCEDURE SDL_RenderClear(renderer : SDL_Renderer) : [ INTEGER ];
+PROCEDURE SDL_RenderCopy(renderer : SDL_Renderer; texture : SDL_Texture;
+                         srcRect, dstRect : ADDRESS) : [ INTEGER ];
+PROCEDURE SDL_RenderPresent(renderer : SDL_Renderer);
+
+PROCEDURE SDL_CreateTexture(renderer : SDL_Renderer; format : CARDINAL32;
+                            access, w, h : INTEGER) : SDL_Texture;
+PROCEDURE SDL_DestroyTexture(texture : SDL_Texture);
+PROCEDURE SDL_UpdateTexture(texture : SDL_Texture; rect, pixels : ADDRESS;
+                            pitch : INTEGER) : [ INTEGER ];
+PROCEDURE SDL_SetTextureBlendMode(texture : SDL_Texture; blendMode : INTEGER) : [ INTEGER ];
+PROCEDURE SDL_SetTextureScaleMode(texture : SDL_Texture; scaleMode : INTEGER) : [ INTEGER ];
+
+PROCEDURE SDL_PollEvent(VAR event : SDL_Event) : INTEGER;
+PROCEDURE SDL_PumpEvents;
+PROCEDURE SDL_GetKeyboardState(VAR numKeys : INTEGER) : SDL_KeyStatePtr;
+PROCEDURE SDL_NumJoysticks() : INTEGER;
+PROCEDURE SDL_IsGameController(index : INTEGER) : INTEGER;
+PROCEDURE SDL_GameControllerOpen(index : INTEGER) : SDL_GameController;
+PROCEDURE SDL_GameControllerClose(controller : SDL_GameController);
+PROCEDURE SDL_GameControllerGetAxis(controller : SDL_GameController; axis : INTEGER) : INTEGER16;
+PROCEDURE SDL_GameControllerGetButton(controller : SDL_GameController; button : INTEGER) : CARDINAL8;
+
+PROCEDURE SDL_GetTicks() : CARDINAL32;
+PROCEDURE SDL_Delay(ms : CARDINAL32);
+
+PROCEDURE SDL_OpenAudioDevice(device : ADDRESS; isCapture : INTEGER;
+                              VAR desired, obtained : SDL_AudioSpec;
+                              allowedChanges : INTEGER) : SDL_AudioDeviceID;
+PROCEDURE SDL_CloseAudioDevice(device : SDL_AudioDeviceID);
+PROCEDURE SDL_PauseAudioDevice(device : SDL_AudioDeviceID; pauseOn : INTEGER);
+PROCEDURE SDL_QueueAudio(device : SDL_AudioDeviceID; data : ADDRESS;
+                         len : CARDINAL32) : [ INTEGER ];
+PROCEDURE SDL_GetQueuedAudioSize(device : SDL_AudioDeviceID) : CARDINAL32;
+PROCEDURE SDL_ClearQueuedAudio(device : SDL_AudioDeviceID);
+
+END SDL2.
