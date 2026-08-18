@@ -3,6 +3,8 @@
 IONLANCER is a small arcade shooter written in GNU Modula-2 with SDL2. It runs on a 320x180 framebuffer, has a few game modes, several bosses, controller support, and a soundtrack called **Endless Endeavor** (as seen on my [youtube!](https://www.youtube.com/watch?v=IQyR7Mr_JS0))
 
 I mostly made it because writing this kind of game in Modula-2 sounded fun.
+I made it, debugged it, then uploaded it as one.
+Enjoy, feel free to nitpick.
 
 ## build
 
