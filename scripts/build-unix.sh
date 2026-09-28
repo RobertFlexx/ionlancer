@@ -68,6 +68,12 @@ elf_interpreter() {
 
 HOST_INTERP=
 DYNAMIC_LINKER_FLAG=
+MAC_LINK_FLAGS=
+if [ "$HOST_KIND" = Darwin ]; then
+  # The portable bundler lengthens @rpath load commands to @loader_path paths.
+  # Reserve Mach-O header space for install_name_tool before signing the app.
+  MAC_LINK_FLAGS='-Wl,-headerpad_max_install_names'
+fi
 if [ "$HOST_KIND" = Linux ]; then
   HOST_SH=$(command -v sh 2>/dev/null || true)
   if [ -n "$HOST_SH" ]; then
@@ -129,7 +135,7 @@ else
 fi
 
 link_normal() {
-  "$GM2" -fpim4 $OPTFLAGS "$MAINOBJ" $OBJECTS -o "$OUT" $DYNAMIC_LINKER_FLAG $SDL_PKG_LIBS
+  "$GM2" -fpim4 $OPTFLAGS "$MAINOBJ" $OBJECTS -o "$OUT" $DYNAMIC_LINKER_FLAG $MAC_LINK_FLAGS $SDL_PKG_LIBS
 }
 
 stage_sdl() {
@@ -167,7 +173,7 @@ link_staged() {
     Linux) ELF_ALLOW="-Wl,--allow-shlib-undefined" ;;
   esac
 
-  "$GM2" -fpim4 $OPTFLAGS "$MAINOBJ" $OBJECTS -o "$OUT" $DYNAMIC_LINKER_FLAG $SDL_AUX_FLAGS $ELF_ALLOW "$SDL_STAGE_FILE"
+  "$GM2" -fpim4 $OPTFLAGS "$MAINOBJ" $OBJECTS -o "$OUT" $DYNAMIC_LINKER_FLAG $MAC_LINK_FLAGS $SDL_AUX_FLAGS $ELF_ALLOW "$SDL_STAGE_FILE"
 }
 
 if link_normal; then

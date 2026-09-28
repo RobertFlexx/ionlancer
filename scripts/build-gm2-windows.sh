@@ -4,7 +4,7 @@ set -euo pipefail
 # MSYS2 UCRT64 does not ship GNU Modula-2. Build its GCC frontend and runtime
 # from a pinned upstream release, then cache the private installation in CI.
 [[ ${MSYSTEM:-} == UCRT64 ]] || { echo 'error: use the MSYS2 UCRT64 shell' >&2; exit 1; }
-for tool in gcc g++ make flex bison m4 sha512sum; do
+for tool in gcc g++ make flex bison m4 patch sha512sum; do
   command -v "$tool" >/dev/null || { echo "error: missing $tool" >&2; exit 1; }
 done
 
@@ -28,6 +28,9 @@ if [[ ! -f "$archive" ]]; then
 fi
 printf '%s  %s\n' "$sha512" "$archive" | sha512sum -c -
 if [[ ! -d "gcc-$version" ]]; then tar -xf "$archive"; fi
+if ! grep -q 'freopen (NameOfFile, "w", stdout)' "gcc-$version/gcc/m2/tools-src/mklink.c"; then
+  patch --directory "gcc-$version" -p1 < "$root/scripts/patches/gcc-15-mklink-windows.patch"
+fi
 mkdir -p obj
 cd obj
 

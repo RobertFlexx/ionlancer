@@ -254,7 +254,7 @@ while [ -s "$QUEUE" ] && [ "$depth" -lt 16 ]; do
       if [ "$BUNDLED_NEW" = 1 ]; then
         printf '%s|%s\n' "$FRAMEWORKS/$BUNDLED_NAME" "$(canonical "$src")" >> "$NEXT"
       fi
-      install_name_tool -change "$dep" "$rebase/$BUNDLED_NAME" "$image" 2>/dev/null || {
+      install_name_tool -change "$dep" "$rebase/$BUNDLED_NAME" "$image" || {
         echo "error: could not rebase $dep in $image" >&2
         exit 1
       }

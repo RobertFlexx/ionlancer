@@ -1,0 +1,20 @@
+--- a/gcc/m2/tools-src/mklink.c
++++ b/gcc/m2/tools-src/mklink.c
+@@ -425,15 +425,10 @@ OpenOutputFile (void)
+ {
+   if (strcmp (NameOfFile, "-") != 0)
+     {
+-      if (close (STDOUT) != 0)
++      if (freopen (NameOfFile, "w", stdout) == NULL)
+         {
+-          ERROR ("Unable to close stdout");
++          ERROR ("Unable to open output file");
+           exit (1);
+         }
+-      OutputFile = creat (NameOfFile, 0666);
+-      if (OutputFile != STDOUT)
+-        {
+-          ERROR ("Expected that the file descriptor should be 1");
+-        }
+     }
+ }
