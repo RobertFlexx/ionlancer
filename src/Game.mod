@@ -1,6 +1,6 @@
 IMPLEMENTATION MODULE Game;
 
-IMPORT FrameBuffer, Visuals, Input, Audio, RNG;
+IMPORT FrameBuffer, Visuals, Input, Audio, RNG, Arena;
 
 CONST
   FP = 256;
@@ -12,14 +12,16 @@ CONST
   MaxStars = 72;
 
 TYPE
-  GameState = (Title, Playing, Paused, GameOver, Victory);
-  PlayMode = (ArcadeMode, EndlessMode, BossRushMode);
+  GameState = (Title, Controls, Hangar, LanSetup, LanPlaying, Playing,
+               Paused, GameOver, Victory);
+  PlayMode = (CampaignMode, EndlessMode, BossRushMode, GauntletMode,
+              TimeAttackMode, LanCoopMode, LanVersusMode);
 
   PlayerRec = RECORD
     x, y, vx, vy : INTEGER;
     cooldown, invuln : CARDINAL;
     lives : CARDINAL;
-    shield : BOOLEAN;
+    shield, reserveShield : BOOLEAN;
     rapidTimer, tripleTimer : CARDINAL;
     pulseCharge : CARDINAL
   END;
@@ -83,6 +85,12 @@ VAR
   bossHealth, bossMaxHealth, bossFire : CARDINAL;
   bossKind, bossPhase, bossesDefeated : CARDINAL;
   selectedMode, gameMode : PlayMode;
+  selectedShip, selectedModifier, selectedTrack, hangarRow : CARDINAL;
+  timeRemaining : CARDINAL;
+  modeIsHost : BOOLEAN;
+  lanError : BOOLEAN;
+  ipOctets : ARRAY [0..3] OF CARDINAL;
+  ipCursor, ipTyping : CARDINAL;
 
 PROCEDURE AbsI(v : INTEGER) : INTEGER;
 BEGIN
@@ -105,9 +113,11 @@ END MinC;
 PROCEDURE DifficultyLevel() : CARDINAL;
 BEGIN
   IF gameMode = BossRushMode THEN RETURN 3 END;
+  IF gameMode = GauntletMode THEN RETURN MinC(3, 1 + wave DIV 3) END;
+  IF gameMode = TimeAttackMode THEN RETURN MinC(3, 1 + wave DIV 5) END;
   IF wave <= 2 THEN RETURN 0 END;
-  IF wave <= 5 THEN RETURN 1 END;
-  IF wave <= 9 THEN RETURN 2 END;
+  IF wave <= 7 THEN RETURN 1 END;
+  IF wave <= 15 THEN RETURN 2 END;
   RETURN 3
 END DifficultyLevel;
 
@@ -225,7 +235,7 @@ BEGIN
   FOR i := 0 TO MaxPowerups-1 DO
     IF NOT powerups[i].active THEN
       powerups[i].active := TRUE;
-      powerups[i].kind := RNG.Range(4);
+      powerups[i].kind := RNG.Range(7);
       powerups[i].x := x*FP; powerups[i].y := y*FP;
       powerups[i].vy := 72;
       powerups[i].life := 720;
@@ -249,8 +259,19 @@ BEGIN
   END;
   comboTimer := 180;
   score := score + VAL(CARDINAL, base) * combo;
-  player.pulseCharge := MinC(100, player.pulseCharge + 5 + enemies[index].kind);
-  IF RNG.Range(9) = 0 THEN SpawnPowerup(x, y) END
+  IF selectedModifier = 3 THEN
+    player.pulseCharge := MinC(100, player.pulseCharge + 10 + enemies[index].kind)
+  ELSIF selectedModifier = 5 THEN
+    player.pulseCharge := MinC(100, player.pulseCharge + 2 + enemies[index].kind DIV 2)
+  ELSIF selectedModifier = 6 THEN
+    player.pulseCharge := MinC(100, player.pulseCharge + 3 + enemies[index].kind DIV 2)
+  ELSE
+    player.pulseCharge := MinC(100, player.pulseCharge + 5 + enemies[index].kind)
+  END;
+  IF selectedModifier = 4 THEN
+    score := score + VAL(CARDINAL, base) * combo
+  END;
+  IF RNG.Range(10) = 0 THEN SpawnPowerup(x, y) END
 END EnemyDestroyed;
 
 PROCEDURE SpawnEnemy;
@@ -259,7 +280,7 @@ BEGIN
   FOR i := 0 TO MaxEnemies-1 DO
     IF NOT enemies[i].active THEN
       tier := DifficultyLevel();
-      level := MinC(12, wave);
+      level := MinC(16, wave);
       r := RNG.Range(100);
       CASE tier OF
         0 : IF r < 64 THEN k := 0 ELSE k := 1 END
@@ -276,13 +297,17 @@ BEGIN
             ELSE k := 5
             END
       ELSE
-            IF r < 18 THEN k := 0
-            ELSIF r < 34 THEN k := 1
-            ELSIF r < 49 THEN k := 2
-            ELSIF r < 62 THEN k := 3
-            ELSIF r < 76 THEN k := 4
-            ELSIF r < 90 THEN k := 5
-            ELSE k := 6
+            IF r < 12 THEN k := 0
+            ELSIF r < 23 THEN k := 1
+            ELSIF r < 34 THEN k := 2
+            ELSIF r < 45 THEN k := 3
+            ELSIF r < 56 THEN k := 4
+            ELSIF r < 67 THEN k := 5
+            ELSIF r < 77 THEN k := 6
+            ELSIF r < 86 THEN k := 7
+            ELSIF r < 93 THEN k := 8
+            ELSIF r < 97 THEN k := 9
+            ELSE k := 10
             END
       END;
 
@@ -321,6 +346,22 @@ BEGIN
             enemies[i].vy := 150 + VAL(INTEGER, level*3);
             enemies[i].health := 2;
             enemies[i].fireTimer := 128 + RNG.Range(90)
+      | 7 : enemies[i].vx := RNG.Between(-48, 48);
+            enemies[i].vy := 112 + VAL(INTEGER, level*2);
+            enemies[i].health := 2;
+            enemies[i].fireTimer := 94 + RNG.Range(70)
+      | 8 : enemies[i].vx := RNG.Between(-30, 30);
+            enemies[i].vy := 64 + VAL(INTEGER, level);
+            enemies[i].health := 4;
+            enemies[i].fireTimer := 68 + RNG.Range(76)
+      | 9 : enemies[i].vx := RNG.Between(-80, 80);
+            enemies[i].vy := 126 + VAL(INTEGER, level*2);
+            enemies[i].health := 2;
+            enemies[i].fireTimer := 108 + RNG.Range(90)
+      | 10: enemies[i].vx := RNG.Between(-20, 20);
+            enemies[i].vy := 88 + VAL(INTEGER, level);
+            enemies[i].health := 6;
+            enemies[i].fireTimer := 80 + RNG.Range(70)
       ELSE enemies[i].vx := 0; enemies[i].vy := 100; enemies[i].health := 1;
            enemies[i].fireTimer := 120
       END;
@@ -337,19 +378,27 @@ BEGIN
   bossPhase := 0;
 
   IF gameMode = BossRushMode THEN
-    bossKind := bossesDefeated MOD 4;
+    bossKind := bossesDefeated MOD 8;
     encounter := bossesDefeated
-  ELSE
-    encounter := wave DIV 5;
+  ELSIF gameMode = GauntletMode THEN
+    encounter := wave DIV 2;
     IF encounter > 0 THEN DEC(encounter) END;
-    bossKind := encounter MOD 4
+    bossKind := encounter MOD 8
+  ELSE
+    encounter := wave DIV 3;
+    IF encounter > 0 THEN DEC(encounter) END;
+    bossKind := encounter MOD 8
   END;
 
   CASE bossKind OF
     0 : base := 120; bossVX := 72; bossFire := 72
   | 1 : base := 145; bossVX := 58; bossFire := 82
   | 2 : base := 170; bossVX := 118; bossFire := 76
-  ELSE base := 200; bossVX := 42; bossFire := 68
+  | 3 : base := 200; bossVX := 42; bossFire := 68
+  | 4 : base := 190; bossVX := 85; bossFire := 66
+  | 5 : base := 210; bossVX := 75; bossFire := 70
+  | 6 : base := 230; bossVX := 100; bossFire := 62
+  ELSE base := 250; bossVX := 65; bossFire := 58
   END;
 
   bossMaxHealth := base + MinC(112, encounter*14);
@@ -374,19 +423,41 @@ BEGIN
   player.x := 160*FP; player.y := 148*FP;
   player.vx := 0; player.vy := 0;
   player.cooldown := 0; player.invuln := 120;
-  player.lives := 3; player.shield := FALSE;
+  player.lives := 3; player.shield := FALSE; player.reserveShield := FALSE;
+  CASE selectedShip OF
+    1 : player.lives := 2
+  | 2 : player.lives := 4; player.shield := TRUE
+  | 3 : player.lives := 3
+  | 4 : player.lives := 2
+  ELSE
+  END;
+  IF selectedModifier = 1 THEN
+    IF player.lives > 1 THEN DEC(player.lives) END
+  ELSIF selectedModifier = 2 THEN
+    IF player.shield THEN player.reserveShield := TRUE
+    ELSE player.shield := TRUE END
+  END;
+  IF (gameMode = TimeAttackMode) AND (player.lives < 4) THEN
+    INC(player.lives)
+  END;
   player.rapidTimer := 0; player.tripleTimer := 0; player.pulseCharge := 0;
+  IF selectedShip = 3 THEN player.pulseCharge := 45 END;
+  IF selectedModifier = 5 THEN player.pulseCharge := 100 END;
+  IF selectedModifier = 1 THEN player.rapidTimer := 18000 END;
   score := 0; bossesDefeated := 0;
   IF gameMode = BossRushMode THEN
-    wave := 5; waveTimer := 0; spawnTimer := 9999; sectorBanner := 180
+    wave := 3; waveTimer := 0; spawnTimer := 9999; sectorBanner := 180
   ELSE
     wave := 1; waveTimer := 0; spawnTimer := 30; sectorBanner := 120
   END;
+  IF gameMode = TimeAttackMode THEN timeRemaining := 14400 ELSE timeRemaining := 0 END;
   combo := 1; comboTimer := 0; shake := 0; flash := 0;
   bossActive := FALSE; bossHealth := 0; bossMaxHealth := 0; bossPhase := 0;
   state := Playing;
   Audio.SetMusic(TRUE);
-  Audio.SetMusicMode(Audio.SynthTrack);
+  Audio.SetTrack(selectedTrack);
+  IF selectedTrack = 5 THEN Audio.SetMusicMode(Audio.ThemeTrack)
+  ELSE Audio.SetMusicMode(Audio.SynthTrack) END;
   IF gameMode = BossRushMode THEN Audio.SetIntensity(2) ELSE Audio.SetIntensity(1) END;
   Audio.Play(Audio.StartJingle)
 END StartGame;
@@ -395,7 +466,8 @@ PROCEDURE DamagePlayer;
 BEGIN
   IF player.invuln > 0 THEN RETURN END;
   IF player.shield THEN
-    player.shield := FALSE;
+    IF player.reserveShield THEN player.reserveShield := FALSE
+    ELSE player.shield := FALSE END;
     player.invuln := 75;
     Burst(player.x DIV FP, player.y DIV FP, 18, 1);
     Audio.Play(Audio.Hurt);
@@ -417,18 +489,30 @@ BEGIN
 END DamagePlayer;
 
 PROCEDURE FirePlayer;
-VAR px, py : INTEGER; cd : CARDINAL;
+VAR px, py : INTEGER; cd, power : CARDINAL;
 BEGIN
   IF player.cooldown # 0 THEN RETURN END;
   px := player.x DIV FP; py := player.y DIV FP;
+  power := 1;
+  IF selectedShip = 4 THEN power := 2 END;
+  IF selectedModifier = 6 THEN INC(power) END;
   IF player.tripleTimer > 0 THEN
-    SpawnPlayerShot(px-4, py-7, -55, -760, 2);
-    SpawnPlayerShot(px, py-9, 0, -810, 2);
-    SpawnPlayerShot(px+4, py-7, 55, -760, 2)
+    SpawnPlayerShot(px-4, py-7, -55, -760, power);
+    SpawnPlayerShot(px, py-9, 0, -810, power+1);
+    SpawnPlayerShot(px+4, py-7, 55, -760, power)
   ELSE
-    SpawnPlayerShot(px, py-8, 0, -820, 1)
+    SpawnPlayerShot(px, py-8, 0, -820, power)
   END;
   IF player.rapidTimer > 0 THEN cd := 5 ELSE cd := 9 END;
+  IF selectedShip = 1 THEN
+    IF cd > 2 THEN DEC(cd, 2) END
+  ELSIF selectedShip = 2 THEN INC(cd, 2)
+  END;
+  IF selectedModifier = 3 THEN INC(cd) END;
+  IF selectedModifier = 1 THEN
+    IF cd > 2 THEN DEC(cd) END
+  ELSIF selectedModifier = 6 THEN INC(cd, 3)
+  END;
   player.cooldown := cd;
   Audio.Play(Audio.Laser)
 END FirePlayer;
@@ -459,28 +543,39 @@ BEGIN
 END ActivatePulse;
 
 PROCEDURE UpdatePlayer;
-CONST Accel = 118; MaxSpeed = 700;
-VAR ax, ay : INTEGER;
+VAR ax, ay, accel, maxSpeed : INTEGER;
 BEGIN
+  accel := 118; maxSpeed := 700;
+  CASE selectedShip OF
+    1 : accel := 145; maxSpeed := 850
+  | 2 : accel := 94; maxSpeed := 570
+  | 3 : accel := 132; maxSpeed := 760
+  | 4 : accel := 125; maxSpeed := 740
+  ELSE
+  END;
+  IF selectedModifier = 2 THEN
+    accel := accel * 4 DIV 5;
+    maxSpeed := maxSpeed * 4 DIV 5
+  END;
   ax := 0; ay := 0;
-  IF Input.Held(Input.Left) THEN ax := ax - Accel END;
-  IF Input.Held(Input.Right) THEN ax := ax + Accel END;
-  IF Input.Held(Input.Up) THEN ay := ay - Accel END;
-  IF Input.Held(Input.Down) THEN ay := ay + Accel END;
+  IF Input.Held(Input.Left) THEN ax := ax - accel END;
+  IF Input.Held(Input.Right) THEN ax := ax + accel END;
+  IF Input.Held(Input.Up) THEN ay := ay - accel END;
+  IF Input.Held(Input.Down) THEN ay := ay + accel END;
 
   (* Snappy arcade movement, with just enough drift to not feel robotic. *)
   player.vx := player.vx + ax; player.vy := player.vy + ay;
   IF ax = 0 THEN player.vx := player.vx DIV 2 END;
   IF ay = 0 THEN player.vy := player.vy DIV 2 END;
-  player.vx := ClampI(player.vx, -MaxSpeed, MaxSpeed);
-  player.vy := ClampI(player.vy, -MaxSpeed, MaxSpeed);
+  player.vx := ClampI(player.vx, -maxSpeed, maxSpeed);
+  player.vy := ClampI(player.vy, -maxSpeed, maxSpeed);
   player.x := player.x + player.vx; player.y := player.y + player.vy;
   player.x := ClampI(player.x, 10*FP, 310*FP);
   player.y := ClampI(player.y, 18*FP, 169*FP);
 
   IF player.cooldown > 0 THEN DEC(player.cooldown) END;
   IF player.invuln > 0 THEN DEC(player.invuln) END;
-  IF player.rapidTimer > 0 THEN DEC(player.rapidTimer) END;
+  IF (player.rapidTimer > 0) AND (selectedModifier # 1) THEN DEC(player.rapidTimer) END;
   IF player.tripleTimer > 0 THEN DEC(player.tripleTimer) END;
 
   (* Quick taps count too. Losing a shot because it landed between ticks felt like crap. *)
@@ -527,6 +622,15 @@ BEGIN
               Tri(enemies[i].phase, 70, 18)
       | 6 : enemies[i].x := enemies[i].x + enemies[i].vx +
               Tri(enemies[i].phase, 22, 44)
+      | 7 : enemies[i].x := enemies[i].x + enemies[i].vx +
+              Tri(enemies[i].phase, 19, 86)
+      | 8 : enemies[i].x := enemies[i].x + enemies[i].vx DIV 4;
+            IF (enemies[i].phase MOD 90) = 0 THEN enemies[i].vx := -enemies[i].vx END
+      | 9 : IF (enemies[i].phase MOD 100) < 42 THEN
+              enemies[i].x := enemies[i].x + enemies[i].vx * 2
+            ELSE enemies[i].x := enemies[i].x + enemies[i].vx DIV 3 END
+      | 10: enemies[i].x := enemies[i].x + Tri(enemies[i].phase, 56, 30);
+            IF (enemies[i].phase MOD 210) = 0 THEN SpawnEnemy END
       ELSE enemies[i].x := enemies[i].x + enemies[i].vx
       END;
 
@@ -542,6 +646,14 @@ BEGIN
           | 5 : SpawnEnemyShot(ex-6, ey+5, px-ex-38, py-ey);
                 SpawnEnemyShot(ex, ey+5, px-ex, py-ey);
                 SpawnEnemyShot(ex+6, ey+5, px-ex+38, py-ey)
+          | 7 : SpawnEnemyShot(ex, ey+5, px-ex, py-ey);
+                SpawnEnemyShot(ex, ey+5, px-ex+42, py-ey)
+          | 8 : SpawnEnemyShot(ex-8, ey+5, -72, 260);
+                SpawnEnemyShot(ex, ey+5, 0, 280);
+                SpawnEnemyShot(ex+8, ey+5, 72, 260)
+          | 9 : SpawnEnemyShot(ex, ey+4, px-ex, py-ey)
+          | 10: SpawnEnemyShot(ex-7, ey+6, px-ex-25, py-ey);
+                SpawnEnemyShot(ex+7, ey+6, px-ex+25, py-ey)
           ELSE SpawnEnemyShot(ex, ey+4, px-ex, py-ey)
           END
         END;
@@ -553,12 +665,16 @@ BEGIN
         | 4 : enemies[i].fireTimer := 74 + RNG.Range(66)
         | 5 : enemies[i].fireTimer := 108 + RNG.Range(74)
         | 6 : enemies[i].fireTimer := 136 + RNG.Range(84)
+        | 7 : enemies[i].fireTimer := 92 + RNG.Range(68)
+        | 8 : enemies[i].fireTimer := 80 + RNG.Range(58)
+        | 9 : enemies[i].fireTimer := 110 + RNG.Range(62)
+        | 10: enemies[i].fireTimer := 98 + RNG.Range(74)
         ELSE enemies[i].fireTimer := 120
         END
       END;
 
       hitX := 9; hitY := 8;
-      IF enemies[i].kind = 5 THEN hitX := 12; hitY := 9
+      IF (enemies[i].kind = 5) OR (enemies[i].kind = 10) THEN hitX := 12; hitY := 9
       ELSIF enemies[i].kind = 6 THEN hitX := 10; hitY := 8
       END;
       IF ey > 195 THEN enemies[i].active := FALSE
@@ -618,12 +734,16 @@ BEGIN
       ELSIF (AbsI(x-px) < 10) AND (AbsI(y-py) < 10) THEN
         powerups[i].active := FALSE;
         CASE powerups[i].kind OF
-          0 : player.shield := TRUE
+          0 : IF player.shield THEN player.reserveShield := TRUE
+              ELSE player.shield := TRUE END
         | 1 : player.rapidTimer := 900
         | 2 : player.tripleTimer := 900
-        | 3 : IF player.lives < 3 THEN INC(player.lives)
+        | 3 : IF player.lives < 4 THEN INC(player.lives)
               ELSE player.pulseCharge := MinC(100, player.pulseCharge + 35)
               END
+        | 4 : player.pulseCharge := MinC(100, player.pulseCharge + 55)
+        | 5 : score := score + 1250
+        | 6 : player.invuln := 300
         END;
         score := score + 250;
         Burst(x, y, 18, 1);
@@ -644,7 +764,7 @@ BEGIN
         IF enemies[e].active THEN
           ex := enemies[e].x DIV FP; ey := enemies[e].y DIV FP;
           hitX := 9; hitY := 7;
-          IF enemies[e].kind = 5 THEN hitX := 12; hitY := 9
+          IF (enemies[e].kind = 5) OR (enemies[e].kind = 10) THEN hitX := 12; hitY := 9
           ELSIF enemies[e].kind = 6 THEN hitX := 10; hitY := 7
           END;
           IF (AbsI(sx-ex) < hitX) AND (AbsI(sy-ey) < hitY) THEN
@@ -689,18 +809,21 @@ BEGIN
 
   IF gameMode = BossRushMode THEN
     player.pulseCharge := MinC(100, player.pulseCharge + 40);
-    IF (bossesDefeated MOD 2) = 0 THEN player.shield := TRUE END;
+    IF (bossesDefeated MOD 2) = 0 THEN
+      IF player.shield THEN player.reserveShield := TRUE
+      ELSE player.shield := TRUE END
+    END;
     IF bossesDefeated >= 8 THEN
       state := Victory; sectorBanner := 0;
       Audio.SetMusicMode(Audio.ThemeTrack);
       Audio.SetIntensity(0)
     ELSE
-      wave := 5 + bossesDefeated*5;
+      wave := 3 + bossesDefeated*3;
       waveTimer := 0;
       spawnTimer := 9999;
       Audio.SetIntensity(MinC(3, 2 + bossesDefeated DIV 4))
     END
-  ELSIF (gameMode = ArcadeMode) AND (wave >= 20) THEN
+  ELSIF (gameMode = CampaignMode) AND (wave >= 24) THEN
     state := Victory; sectorBanner := 0;
     Audio.SetMusicMode(Audio.ThemeTrack);
     Audio.SetIntensity(0)
@@ -708,6 +831,8 @@ BEGIN
     INC(wave);
     waveTimer := 0;
     spawnTimer := 84;
+    IF (gameMode = TimeAttackMode) AND ((bossesDefeated MOD 2) = 0) AND
+       (player.lives < 4) THEN INC(player.lives) END;
     Audio.SetIntensity(MinC(3, wave DIV 4))
   END
 END BossDestroyed;
@@ -735,9 +860,24 @@ BEGIN
         IF bossX < 38*FP THEN bossX := 38*FP; bossVX := AbsI(bossVX) END;
         IF bossX > 282*FP THEN bossX := 282*FP; bossVX := -AbsI(bossVX) END;
         bossY := 34*FP
-  ELSE
+  | 3 :
         bossX := (160 + Tri(bossPhase, 118, 154))*FP;
         bossY := (30 + Tri(bossPhase+41, 74, 12))*FP
+  | 4 : bossX := (160 + Tri(bossPhase, 92, 170))*FP;
+        bossY := (33 + Tri(bossPhase+21, 48, 18))*FP
+  | 5 : bossX := bossX + bossVX;
+        IF bossX < 48*FP THEN bossX := 48*FP; bossVX := AbsI(bossVX) END;
+        IF bossX > 272*FP THEN bossX := 272*FP; bossVX := -AbsI(bossVX) END;
+        bossY := (28 + Tri(bossPhase, 68, 12))*FP
+  | 6 : speed := 55;
+        IF (bossPhase MOD 190) < 45 THEN speed := 220 END;
+        IF bossVX < 0 THEN bossVX := -speed ELSE bossVX := speed END;
+        bossX := bossX + bossVX;
+        IF bossX < 38*FP THEN bossX := 38*FP; bossVX := AbsI(bossVX) END;
+        IF bossX > 282*FP THEN bossX := 282*FP; bossVX := -AbsI(bossVX) END;
+        bossY := (32 + Tri(bossPhase, 80, 16))*FP
+  ELSE bossX := (160 + Tri(bossPhase, 140, 155))*FP;
+       bossY := (28 + Tri(bossPhase+30, 58, 16))*FP
   END;
 
   bx := bossX DIV FP; bossYScreen := bossY DIV FP;
@@ -764,7 +904,7 @@ BEGIN
           SpawnEnemyShot(bx, bossYScreen+10, px-bx, py-(bossYScreen+10));
           SpawnEnemyShot(bx+15, bossYScreen+8, px-(bx+15), py-(bossYScreen+8));
           bossFire := 64 + RNG.Range(22)
-    ELSE
+    | 3 :
           IF (bossPhase MOD 2) = 0 THEN
             FOR d := -3 TO 3 DO SpawnEnemyShot(bx, bossYScreen+7, d*52, 330) END
           ELSE
@@ -772,6 +912,25 @@ BEGIN
             SpawnEnemyShot(bx+10, bossYScreen+8, px-(bx+10), py-(bossYScreen+8))
           END;
           bossFire := 52 + RNG.Range(16)
+    | 4 : SpawnEnemyShot(bx-19, bossYScreen+9, px-(bx-19), py-bossYScreen);
+          SpawnEnemyShot(bx+19, bossYScreen+9, px-(bx+19), py-bossYScreen);
+          SpawnEnemyShot(bx, bossYScreen+8, 0, 340);
+          bossFire := 62 + RNG.Range(20)
+    | 5 : FOR d := -2 TO 2 DO
+            SpawnEnemyShot(bx+d*9, bossYScreen+8, d*85, 340)
+          END;
+          bossFire := 66 + RNG.Range(20)
+    | 6 : SpawnEnemyShot(bx-16, bossYScreen+10, px-bx-40, py-bossYScreen);
+          SpawnEnemyShot(bx, bossYScreen+10, px-bx, py-bossYScreen);
+          SpawnEnemyShot(bx+16, bossYScreen+10, px-bx+40, py-bossYScreen);
+          bossFire := 58 + RNG.Range(16)
+    ELSE FOR d := -3 TO 3 DO
+            IF (d MOD 2) = 0 THEN
+              SpawnEnemyShot(bx, bossYScreen+8, d*56, 340)
+            END
+          END;
+          SpawnEnemyShot(bx, bossYScreen+8, px-bx, py-bossYScreen);
+          bossFire := 54 + RNG.Range(16)
     END
   END;
 
@@ -789,7 +948,8 @@ BEGIN
     RETURN
   END;
 
-  IF (wave MOD 5) = 0 THEN
+  IF ((gameMode = GauntletMode) AND ((wave MOD 2) = 0)) OR
+     ((gameMode # GauntletMode) AND ((wave MOD 3) = 0)) THEN
     IF waveTimer > 92 THEN SpawnBoss END;
     RETURN
   END;
@@ -801,7 +961,14 @@ BEGIN
     IF (tier >= 2) AND (RNG.Range(5) = 0) THEN SpawnEnemy END;
     IF (tier >= 3) AND (RNG.Range(10) = 0) THEN SpawnEnemy END;
 
-    IF gameMode = EndlessMode THEN
+    IF gameMode = GauntletMode THEN
+      CASE tier OF
+        0 : rate := 38
+      | 1 : rate := 34
+      | 2 : rate := 29
+      ELSE rate := 26
+      END
+    ELSIF gameMode = EndlessMode THEN
       CASE tier OF
         0 : rate := 45
       | 1 : rate := 37
@@ -816,14 +983,22 @@ BEGIN
       ELSE rate := 29
       END
     END;
-    spawnTimer := rate + RNG.Range(16)
+    spawnTimer := rate + RNG.Range(16);
+    IF selectedModifier = 4 THEN spawnTimer := spawnTimer*4 DIV 5 END
   END;
 
-  IF gameMode = EndlessMode THEN limit := 780 ELSE limit := 840 END;
+  IF gameMode = EndlessMode THEN limit := 780
+  ELSIF gameMode = GauntletMode THEN limit := 660
+  ELSIF gameMode = TimeAttackMode THEN limit := 720
+  ELSE limit := 840
+  END;
   IF waveTimer >= limit THEN
     INC(wave); waveTimer := 0; spawnTimer := 64; sectorBanner := 120;
     Audio.SetIntensity(MinC(3, wave DIV 4));
-    IF (wave MOD 5) = 0 THEN spawnTimer := 9999 END
+    IF ((gameMode = GauntletMode) AND ((wave MOD 2) = 0)) OR
+       ((gameMode # GauntletMode) AND ((wave MOD 3) = 0)) THEN
+      spawnTimer := 9999
+    END
   END
 END UpdateWave;
 
@@ -845,6 +1020,16 @@ BEGIN
   CheckShotCollisions;
   UpdateWave;
 
+  IF (gameMode = TimeAttackMode) AND (state = Playing) THEN
+    IF timeRemaining > 0 THEN DEC(timeRemaining) END;
+    IF timeRemaining = 0 THEN
+      state := Victory;
+      sectorBanner := 0;
+      bossActive := FALSE;
+      Audio.SetMusicMode(Audio.ThemeTrack)
+    END
+  END;
+
   IF comboTimer > 0 THEN DEC(comboTimer)
   ELSE combo := 1
   END;
@@ -860,12 +1045,18 @@ BEGIN
   combo := 1; comboTimer := 0; quitWanted := FALSE;
   shake := 0; flash := 0; sectorBanner := 0;
   bossActive := FALSE; bossKind := 0; bossPhase := 0; bossesDefeated := 0;
-  selectedMode := ArcadeMode; gameMode := ArcadeMode;
+  selectedMode := CampaignMode; gameMode := CampaignMode;
+  selectedShip := 0; selectedModifier := 0; selectedTrack := 0;
+  hangarRow := 0; modeIsHost := TRUE; ipCursor := 0; ipTyping := 0;
+  lanError := FALSE;
+  ipOctets[0] := 192; ipOctets[1] := 168;
+  ipOctets[2] := 1; ipOctets[3] := 2;
   ClearObjects; InitStars;
   EnterTitle
 END Init;
 
 PROCEDURE Update;
+VAR digit : INTEGER; step, candidate : CARDINAL;
 BEGIN
   INC(tick);
   UpdateStars;
@@ -873,24 +1064,134 @@ BEGIN
     Title:
       UpdateParticles;
       IF (tick MOD 90) = 0 THEN Burst(VAL(INTEGER, 30+RNG.Range(260)), VAL(INTEGER, 20+RNG.Range(95)), 4, 1) END;
-      IF Input.MenuStep(Input.Left) OR Input.MenuStep(Input.Up) THEN
-        CASE selectedMode OF
-          ArcadeMode : selectedMode := BossRushMode
-        | EndlessMode : selectedMode := ArcadeMode
-        | BossRushMode : selectedMode := EndlessMode
-        END;
+      IF Input.MenuStep(Input.Left) THEN
+        selectedMode := VAL(PlayMode, (ORD(selectedMode)+6) MOD 7);
         Audio.Play(Audio.MenuBlip)
-      ELSIF Input.MenuStep(Input.Right) OR Input.MenuStep(Input.Down) THEN
-        CASE selectedMode OF
-          ArcadeMode : selectedMode := EndlessMode
-        | EndlessMode : selectedMode := BossRushMode
-        | BossRushMode : selectedMode := ArcadeMode
+      ELSIF Input.MenuStep(Input.Right) THEN
+        selectedMode := VAL(PlayMode, (ORD(selectedMode)+1) MOD 7);
+        Audio.Play(Audio.MenuBlip)
+      END;
+      IF Input.MenuStep(Input.Up) THEN
+        selectedShip := (selectedShip+4) MOD 5;
+        Audio.Play(Audio.MenuBlip)
+      ELSIF Input.MenuStep(Input.Down) THEN
+        selectedShip := (selectedShip+1) MOD 5;
+        Audio.Play(Audio.MenuBlip)
+      END;
+      IF Input.Pressed(Input.Cancel) THEN quitWanted := TRUE
+      ELSIF Input.Pressed(Input.Menu) THEN
+        state := Controls; Audio.Play(Audio.MenuBlip)
+      ELSIF Input.Pressed(Input.AltFire) THEN
+        state := Hangar; hangarRow := 0; Audio.Play(Audio.MenuBlip)
+      ELSIF Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire) THEN
+        IF (selectedMode = LanCoopMode) OR (selectedMode = LanVersusMode) THEN
+          state := LanSetup; lanError := FALSE; Audio.Play(Audio.MenuBlip)
+        ELSE StartGame
+        END
+      ELSIF Input.Pressed(Input.Back) OR Input.Pressed(Input.Cancel) THEN
+        quitWanted := TRUE
+      END
+  | Controls:
+      UpdateParticles;
+      IF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) OR
+         Input.Pressed(Input.Cancel) OR Input.Pressed(Input.Start) OR
+         Input.Pressed(Input.Fire) THEN
+        state := Title; Audio.Play(Audio.MenuBlip)
+      END
+  | Hangar:
+      UpdateParticles;
+      IF Input.MenuStep(Input.Up) THEN
+        hangarRow := (hangarRow+2) MOD 3; Audio.Play(Audio.MenuBlip)
+      ELSIF Input.MenuStep(Input.Down) THEN
+        hangarRow := (hangarRow+1) MOD 3; Audio.Play(Audio.MenuBlip)
+      END;
+      IF Input.MenuStep(Input.Left) OR Input.MenuStep(Input.Right) THEN
+        IF hangarRow = 0 THEN
+          IF Input.MenuStep(Input.Left) THEN selectedShip := (selectedShip+4) MOD 5
+          ELSE selectedShip := (selectedShip+1) MOD 5 END
+        ELSIF hangarRow = 1 THEN
+          IF Input.MenuStep(Input.Left) THEN selectedModifier := (selectedModifier+6) MOD 7
+          ELSE selectedModifier := (selectedModifier+1) MOD 7 END
+        ELSE
+          IF Input.MenuStep(Input.Left) THEN selectedTrack := (selectedTrack+5) MOD 6
+          ELSE selectedTrack := (selectedTrack+1) MOD 6 END;
+          Audio.SetTrack(selectedTrack);
+          IF selectedTrack = 5 THEN Audio.SetMusicMode(Audio.ThemeTrack)
+          ELSE Audio.SetMusicMode(Audio.SynthTrack) END;
+          Audio.SetIntensity(1)
         END;
         Audio.Play(Audio.MenuBlip)
       END;
-      IF Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire) THEN StartGame
-      ELSIF Input.Pressed(Input.Back) OR Input.Pressed(Input.Cancel) OR
-            Input.Pressed(Input.Menu) THEN quitWanted := TRUE
+      IF Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire) OR
+         Input.Pressed(Input.Back) OR Input.Pressed(Input.Cancel) OR
+         Input.Pressed(Input.Menu) THEN
+        EnterTitle; Audio.Play(Audio.MenuBlip)
+      END
+  | LanSetup:
+      UpdateParticles;
+      IF Input.MenuStep(Input.Left) THEN ipCursor := (ipCursor+3) MOD 4; ipTyping := 0
+      ELSIF Input.MenuStep(Input.Right) THEN ipCursor := (ipCursor+1) MOD 4; ipTyping := 0
+      END;
+      step := 1;
+      IF Input.Held(Input.FastEdit) THEN step := 10 END;
+      IF Input.MenuStep(Input.Up) THEN
+        ipOctets[ipCursor] := (ipOctets[ipCursor]+step) MOD 256;
+        ipTyping := 0
+      ELSIF Input.MenuStep(Input.Down) THEN
+        ipOctets[ipCursor] := (ipOctets[ipCursor]+256-step) MOD 256;
+        ipTyping := 0
+      END;
+      digit := Input.TypedDigit();
+      IF digit >= 0 THEN
+        IF ipTyping = 0 THEN candidate := VAL(CARDINAL, digit)
+        ELSE candidate := ipOctets[ipCursor]*10 + VAL(CARDINAL, digit)
+        END;
+        IF candidate <= 255 THEN
+          ipOctets[ipCursor] := candidate;
+          INC(ipTyping);
+          IF ipTyping >= 3 THEN ipTyping := 0; ipCursor := (ipCursor+1) MOD 4 END
+        ELSE
+          ipOctets[ipCursor] := VAL(CARDINAL, digit); ipTyping := 1
+        END;
+        lanError := FALSE
+      ELSIF Input.TypedDot() THEN
+        ipCursor := (ipCursor+1) MOD 4; ipTyping := 0
+      ELSIF Input.TypedBackspace() THEN
+        IF ipTyping > 0 THEN
+          ipOctets[ipCursor] := ipOctets[ipCursor] DIV 10;
+          DEC(ipTyping)
+        ELSE
+          ipCursor := (ipCursor+3) MOD 4;
+          ipOctets[ipCursor] := ipOctets[ipCursor] DIV 10
+        END
+      END;
+      IF Input.Pressed(Input.SwitchRole) THEN
+        modeIsHost := NOT modeIsHost; lanError := FALSE
+      END;
+      IF Input.Pressed(Input.Back) OR Input.Pressed(Input.Cancel) OR
+         Input.Pressed(Input.Menu) THEN state := Title
+      ELSIF (Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire)) AND
+            NOT Input.Held(Input.Up) AND NOT Input.Held(Input.Down) THEN
+        IF Arena.Start(selectedMode = LanCoopMode, modeIsHost,
+                       ipOctets[0], ipOctets[1], ipOctets[2], ipOctets[3],
+                       selectedShip, selectedModifier) THEN
+          state := LanPlaying;
+          lanError := FALSE; flash := 0;
+          Audio.SetTrack(selectedTrack);
+          IF selectedTrack = 5 THEN Audio.SetMusicMode(Audio.ThemeTrack)
+          ELSE Audio.SetMusicMode(Audio.SynthTrack) END;
+          Audio.SetIntensity(2)
+        ELSE lanError := TRUE END
+      END
+  | LanPlaying:
+      IF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) THEN
+        Arena.Close; EnterTitle
+      ELSE
+        Arena.Update;
+        IF Arena.Finished() AND
+           (Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire)) THEN
+          Arena.Close; EnterTitle
+        END
       END
   | Playing:
       UpdatePlaying
@@ -982,6 +1283,42 @@ BEGIN
   CenterTextBox(0, FrameBuffer.Width, y, text, colour, scale)
 END CenterText;
 
+PROCEDURE ShipLabel(x, y : INTEGER; colour : CARDINAL);
+BEGIN
+  CASE selectedShip OF
+    0 : FrameBuffer.DrawText(x, y, "IRONWING", colour, 1)
+  | 1 : FrameBuffer.DrawText(x, y, "KESTREL", colour, 1)
+  | 2 : FrameBuffer.DrawText(x, y, "BASTION", colour, 1)
+  | 3 : FrameBuffer.DrawText(x, y, "SPECTER", colour, 1)
+  ELSE FrameBuffer.DrawText(x, y, "COMET", colour, 1)
+  END
+END ShipLabel;
+
+PROCEDURE ModifierLabel(x, y : INTEGER; colour : CARDINAL);
+BEGIN
+  CASE selectedModifier OF
+    0 : FrameBuffer.DrawText(x, y, "STANDARD", colour, 1)
+  | 1 : FrameBuffer.DrawText(x, y, "OVERDRIVE", colour, 1)
+  | 2 : FrameBuffer.DrawText(x, y, "FORTIFY", colour, 1)
+  | 3 : FrameBuffer.DrawText(x, y, "SIPHON", colour, 1)
+  | 4 : FrameBuffer.DrawText(x, y, "BOUNTY", colour, 1)
+  | 5 : FrameBuffer.DrawText(x, y, "NOVA", colour, 1)
+  ELSE FrameBuffer.DrawText(x, y, "FOCUS LENS", colour, 1)
+  END
+END ModifierLabel;
+
+PROCEDURE TrackLabel(x, y : INTEGER; colour : CARDINAL);
+BEGIN
+  CASE selectedTrack OF
+    0 : FrameBuffer.DrawText(x, y, "ION DRIFT", colour, 1)
+  | 1 : FrameBuffer.DrawText(x, y, "NEON CHASE", colour, 1)
+  | 2 : FrameBuffer.DrawText(x, y, "ASTER BLOOM", colour, 1)
+  | 3 : FrameBuffer.DrawText(x, y, "EVENT HORIZON", colour, 1)
+  | 4 : FrameBuffer.DrawText(x, y, "AFTERBURN", colour, 1)
+  ELSE FrameBuffer.DrawText(x, y, "ENDLESS ENDEAVOR", colour, 1)
+  END
+END TrackLabel;
+
 
 PROCEDURE DrawHUD;
 VAR buf : ARRAY [0..15] OF CHAR; i, bar, shownWave : CARDINAL;
@@ -999,16 +1336,28 @@ BEGIN
   IF gameMode = BossRushMode THEN
     FrameBuffer.DrawText(109, 4, "BOSS", 6, 1);
     shownWave := MinC(8, bossesDefeated + 1)
+  ELSIF gameMode = TimeAttackMode THEN
+    FrameBuffer.DrawText(106, 4, "TIME", 6, 1);
+    shownWave := 0
   ELSE
     FrameBuffer.DrawText(109, 4, "WAVE", 6, 1);
     shownWave := wave
   END;
-  CardText(shownWave, buf, 2); FrameBuffer.DrawText(134, 4, buf, 12, 1);
+  IF gameMode = TimeAttackMode THEN
+    CardText(timeRemaining DIV 3600, buf, 2);
+    FrameBuffer.DrawText(126, 4, buf, 12, 1);
+    FrameBuffer.DrawText(138, 4, ":", 12, 1);
+    CardText((timeRemaining DIV 60) MOD 60, buf, 2);
+    FrameBuffer.DrawText(144, 4, buf, 12, 1)
+  ELSE
+    CardText(shownWave, buf, 2);
+    FrameBuffer.DrawText(134, 4, buf, 12, 1)
+  END;
 
   FrameBuffer.DrawText(170, 4, "COMBO", 6, 1);
   CardText(combo, buf, 1); FrameBuffer.DrawText(207, 4, buf, 19, 1);
 
-  FOR i := 0 TO 2 DO Visuals.DrawHeart(230+VAL(INTEGER, i*10), 5, i < player.lives) END;
+  FOR i := 0 TO 3 DO Visuals.DrawHeart(228+VAL(INTEGER, i*8), 5, i < player.lives) END;
 
   FrameBuffer.DrawText(262, 4, "PULSE", 6, 1);
   FrameBuffer.Rect(289, 4, 26, 7, 4);
@@ -1060,8 +1409,12 @@ BEGIN
 
   IF (state # GameOver) AND ((player.invuln = 0) OR ((tick MOD 6) < 3)) THEN
     bank := player.vx DIV 180;
-    Visuals.DrawPlayer(player.x DIV FP + sx, player.y DIV FP + sy,
-                       tick, bank, player.shield)
+    Visuals.DrawShip(selectedShip, player.x DIV FP + sx, player.y DIV FP + sy,
+                     tick, bank, player.shield);
+    IF player.reserveShield THEN
+      FrameBuffer.Rect(player.x DIV FP + sx - 15,
+                       player.y DIV FP + sy - 16, 31, 32, 11)
+    END
   END
 END DrawObjects;
 
@@ -1073,12 +1426,44 @@ BEGIN
     0 : CenterText(20, "NULL WARDEN", 17, 1)
   | 1 : CenterText(20, "PRISM SERAPH", 12, 1)
   | 2 : CenterText(20, "IRON REAVER", 19, 1)
-  ELSE CenterText(20, "ECLIPSE CORE", 16, 1)
+  | 3 : CenterText(20, "ECLIPSE CORE", 16, 1)
+  | 4 : CenterText(20, "MIRROR TWINS", 12, 1)
+  | 5 : CenterText(20, "THORN MATRIX", 10, 1)
+  | 6 : CenterText(20, "RIFT LEVIATHAN", 15, 1)
+  ELSE CenterText(20, "STAR DEVOURER", 19, 1)
   END;
   FrameBuffer.Rect(64, 28, 193, 7, 4);
   IF bossMaxHealth > 0 THEN bar := bossHealth * 191 DIV bossMaxHealth ELSE bar := 0 END;
   IF bar > 0 THEN FrameBuffer.FillRect(65, 29, VAL(INTEGER, bar), 5, 16 + ((tick DIV 4) MOD 3)) END
 END DrawBossBar;
+
+PROCEDURE DrawChapterCard(y : INTEGER);
+VAR chapter : CARDINAL; buf : ARRAY [0..15] OF CHAR;
+BEGIN
+  chapter := (wave-1) DIV 3;
+  Visuals.DrawPanel(42, y, 236, 54, TRUE);
+  CardText(chapter+1, buf, 2);
+  FrameBuffer.DrawText(113, y+7, "CHAPTER", 19, 1);
+  FrameBuffer.DrawText(162, y+7, buf, 8, 1);
+  CASE chapter OF
+    0 : CenterTextBox(42, 236, y+20, "THE QUIET REACH", 12, 2);
+        CenterTextBox(42, 236, y+43, "TRACE THE NULL SIGNAL", 6, 1)
+  | 1 : CenterTextBox(42, 236, y+20, "PRISM FRONT", 12, 2);
+        CenterTextBox(42, 236, y+43, "BREACH THE FRACTURED LIGHT", 6, 1)
+  | 2 : CenterTextBox(42, 236, y+20, "IRON GRAVE", 12, 2);
+        CenterTextBox(42, 236, y+43, "BREAK THE FORGE LINE", 6, 1)
+  | 3 : CenterTextBox(42, 236, y+20, "ECLIPSE GATE", 12, 2);
+        CenterTextBox(42, 236, y+43, "SHUT THE DARK ENGINE", 6, 1)
+  | 4 : CenterTextBox(42, 236, y+20, "TWIN MIRROR", 12, 2);
+        CenterTextBox(42, 236, y+43, "SEVER THE MIRROR LINK", 6, 1)
+  | 5 : CenterTextBox(42, 236, y+20, "THORN EXPANSE", 12, 2);
+        CenterTextBox(42, 236, y+43, "BURN THROUGH THE THORNS", 6, 1)
+  | 6 : CenterTextBox(42, 236, y+20, "RIFT CHASM", 12, 2);
+        CenterTextBox(42, 236, y+43, "SEAL THE OPEN RIFT", 6, 1)
+  ELSE CenterTextBox(42, 236, y+20, "DEVOURER WAKE", 12, 2);
+       CenterTextBox(42, 236, y+43, "END THE STAR HUNGER", 6, 1)
+  END
+END DrawChapterCard;
 
 PROCEDURE DrawBanner;
 VAR buf : ARRAY [0..15] OF CHAR; y : INTEGER;
@@ -1087,8 +1472,14 @@ BEGIN
   IF sectorBanner > 90 THEN y := 60 - VAL(INTEGER, (sectorBanner-90) DIV 3)
   ELSE y := 60
   END;
+  IF (gameMode = CampaignMode) AND ((wave MOD 3) = 1) THEN
+    DrawChapterCard(y-8);
+    RETURN
+  END;
   Visuals.DrawPanel(84, y, 152, 34, TRUE);
-  IF (gameMode = BossRushMode) OR ((wave MOD 5) = 0) THEN
+  IF (gameMode = BossRushMode) OR
+     ((gameMode = GauntletMode) AND ((wave MOD 2) = 0)) OR
+     ((gameMode # GauntletMode) AND ((wave MOD 3) = 0)) THEN
     CenterTextBox(84, 152, y+7, "BOSS ALERT", 19, 2);
     IF gameMode = BossRushMode THEN
       CardText(bossesDefeated + 1, buf, 2);
@@ -1105,7 +1496,6 @@ END DrawBanner;
 
 PROCEDURE DrawTitle;
 VAR blink, low, lowMid, highMid, high : CARDINAL;
-    actionX, navWidth, startWidth : INTEGER;
 BEGIN
   Visuals.DrawLogo(tick);
   Visuals.DrawPanel(14, 86, 136, 79, TRUE);
@@ -1113,34 +1503,37 @@ BEGIN
 
   CenterTextBox(14, 136, 94, "SELECT MODE", 6, 1);
   CASE selectedMode OF
-    ArcadeMode : CenterTextBox(14, 136, 104, "ARCADE", 12, 2);
-                 CenterTextBox(14, 136, 119, "20 SECTORS / 4 BOSSES", 5, 1)
+    CampaignMode : CenterTextBox(14, 136, 104, "CAMPAIGN", 12, 2);
+                   CenterTextBox(14, 136, 119, "24 SECTORS / 8 BOSSES", 5, 1)
   | EndlessMode : CenterTextBox(14, 136, 104, "ENDLESS", 12, 2);
                   CenterTextBox(14, 136, 119, "SURVIVE / SCORE ATTACK", 5, 1)
   | BossRushMode : CenterTextBox(14, 136, 104, "BOSS RUSH", 12, 2);
-                   CenterTextBox(14, 136, 119, "8 BOSSES / NO WAVES", 5, 1)
+                   CenterTextBox(14, 136, 119, "8 UNIQUE ENCOUNTERS", 5, 1)
+  | GauntletMode : CenterTextBox(14, 136, 104, "GAUNTLET", 12, 2);
+                   CenterTextBox(14, 136, 119, "FAST WAVES / HARDER", 5, 1)
+  | TimeAttackMode : CenterTextBox(14, 136, 104, "TIME ATTACK", 12, 2);
+                     CenterTextBox(14, 136, 119, "4 MINUTE SCORE RUN", 5, 1)
+  | LanCoopMode : CenterTextBox(14, 136, 104, "LAN CO-OP", 12, 2);
+                  CenterTextBox(14, 136, 119, "TWO PILOT SURVIVAL", 5, 1)
+  | LanVersusMode : CenterTextBox(14, 136, 104, "LAN VERSUS", 12, 2);
+                    CenterTextBox(14, 136, 119, "PILOT DUEL / ROUNDS", 5, 1)
   END;
 
   FrameBuffer.HLine(27, 137, 130, 3);
-  navWidth := VAL(INTEGER, Visuals.HintWidth(Visuals.NavigateHint, "MODE"));
-  startWidth := VAL(INTEGER, Visuals.HintWidth(Visuals.ConfirmHint, "START"));
-  actionX := 14 + (136 - navWidth - 10 - startWidth) DIV 2;
-  Visuals.DrawHint(actionX, 135, Visuals.NavigateHint, "MODE", 7);
+  Visuals.CenterHint(14, 136, 139, Visuals.NavigateHint, "MODE", 7);
   blink := (tick DIV 16) MOD 2;
   IF blink = 0 THEN
-    Visuals.DrawHint(actionX + navWidth + 10, 135, Visuals.ConfirmHint, "START", 19)
+    Visuals.CenterHint(14, 136, 151, Visuals.ConfirmHint, "PLAY", 19)
   ELSE
-    Visuals.DrawHint(actionX + navWidth + 10, 135, Visuals.ConfirmHint, "START", 8)
+    Visuals.CenterHint(14, 136, 151, Visuals.ConfirmHint, "PLAY", 8)
   END;
-  Visuals.CenterHint(14, 136, 150, Visuals.MoveHint, "MOVE", 5);
 
-  (* Same ship in the menu and the game. No fake showroom version. *)
-  Visuals.DrawPlayerPreview(238, 123, tick);
+  Visuals.DrawShipPreview(selectedShip, 264, 123, tick);
   CenterTextBox(170, 136, 94, "YOUR SHIP", 6, 1);
-  FrameBuffer.DrawText(175, 108, "IRONWING", 19, 1);
-  FrameBuffer.DrawText(188, 118, "MK-I", 6, 1);
-  Visuals.DrawHint(181, 150, Visuals.FireHint, "FIRE", 12);
-  Visuals.DrawHint(246, 150, Visuals.PulseHint, "PULSE", 19);
+  ShipLabel(176, 107, 19);
+  ModifierLabel(176, 119, 12);
+  Visuals.DrawHint(176, 137, Visuals.MoveHint, "SHIP", 5);
+  Visuals.CenterHint(170, 136, 151, Visuals.PulseHint, "HANGAR", 12);
 
   low := Audio.ThemeMeter(0);
   lowMid := Audio.ThemeMeter(1);
@@ -1148,10 +1541,111 @@ BEGIN
   high := Audio.ThemeMeter(3);
   Visuals.DrawMusicTag(12, 169, low, lowMid, highMid, high);
   FrameBuffer.DrawText(42, 169, "ENDLESS ENDEAVOR", 12, 1);
-  Visuals.DrawHint(130, 169, Visuals.PauseHint, "PAUSE", 5);
+  Visuals.DrawHint(130, 169, Visuals.MenuHint, "HELP", 5);
   Visuals.DrawHint(181, 169, Visuals.CancelHint, "QUIT", 5);
   Visuals.DrawHint(238, 169, Visuals.FullscreenHint, "FULL", 5)
 END DrawTitle;
+
+PROCEDURE DrawControls;
+BEGIN
+  Visuals.DrawLogo(tick);
+  Visuals.DrawPanel(23, 72, 274, 94, TRUE);
+  CenterTextBox(23, 274, 80, "FLIGHT CONTROLS", 12, 1);
+  FrameBuffer.HLine(34, 286, 91, 4);
+  Visuals.DrawHint(37, 98, Visuals.MoveHint, "MOVE", 12);
+  Visuals.DrawHint(177, 98, Visuals.NavigateHint, "MENUS", 12);
+  Visuals.DrawHint(37, 112, Visuals.FireHint, "FIRE", 19);
+  Visuals.DrawHint(177, 112, Visuals.PulseHint, "PULSE", 19);
+  Visuals.DrawHint(37, 126, Visuals.PauseHint, "PAUSE", 12);
+  Visuals.DrawHint(177, 126, Visuals.MenuHint, "MENU", 12);
+  Visuals.DrawHint(37, 140, Visuals.FullscreenHint, "FULL", 6);
+  Visuals.DrawHint(177, 140, Visuals.CancelHint, "BACK", 6);
+  CenterTextBox(23, 274, 154, "HINTS FOLLOW THE LAST DEVICE USED", 5, 1)
+END DrawControls;
+
+PROCEDURE DrawHangar;
+BEGIN
+  Visuals.DrawLogo(tick);
+  Visuals.DrawPanel(18, 74, 284, 92, TRUE);
+  CenterTextBox(18, 284, 81, "HANGAR / LOADOUT", 12, 1);
+  FrameBuffer.HLine(28, 291, 92, 4);
+  IF hangarRow = 0 THEN FrameBuffer.Rect(27, 98, 181, 12, 12) END;
+  IF hangarRow = 1 THEN FrameBuffer.Rect(27, 116, 181, 12, 12) END;
+  IF hangarRow = 2 THEN FrameBuffer.Rect(27, 134, 181, 12, 12) END;
+  FrameBuffer.DrawText(34, 100, "SHIP", 6, 1);
+  ShipLabel(100, 100, 19);
+  FrameBuffer.DrawText(34, 118, "MOD", 6, 1);
+  ModifierLabel(100, 118, 10);
+  FrameBuffer.DrawText(34, 136, "MUSIC", 6, 1);
+  TrackLabel(100, 136, 15);
+  Visuals.DrawShipPreview(selectedShip, 258, 121, tick);
+  CASE hangarRow OF
+    0 : CASE selectedShip OF
+          0 : FrameBuffer.DrawText(34, 153, "BALANCED / 3 HULL", 5, 1)
+        | 1 : FrameBuffer.DrawText(34, 153, "FAST FIRE / 2 HULL", 5, 1)
+        | 2 : FrameBuffer.DrawText(34, 153, "ARMORED / 4 HULL", 5, 1)
+        | 3 : FrameBuffer.DrawText(34, 153, "PULSE ACE / 3 HULL", 5, 1)
+        ELSE FrameBuffer.DrawText(34, 153, "HEAVY SHOTS / 2 HULL", 5, 1)
+        END
+  | 1 : CASE selectedModifier OF
+          0 : FrameBuffer.DrawText(34, 153, "PURE FLIGHT / NO TRADEOFF", 5, 1)
+        | 1 : FrameBuffer.DrawText(34, 153, "RAPID FIRE / LESS HULL", 5, 1)
+        | 2 : FrameBuffer.DrawText(34, 153, "SHIELD / SLOWER FLIGHT", 5, 1)
+        | 3 : FrameBuffer.DrawText(34, 153, "MORE PULSE / SLOW FIRE", 5, 1)
+        | 4 : IF selectedMode = LanVersusMode THEN
+                FrameBuffer.DrawText(34, 153, "MORE PULSE / LESS HULL", 5, 1)
+              ELSE
+                FrameBuffer.DrawText(34, 153, "DOUBLE SCORE / MORE FOES", 5, 1)
+              END
+        | 5 : FrameBuffer.DrawText(34, 153, "FULL PULSE / SLOW CHARGE", 5, 1)
+        ELSE FrameBuffer.DrawText(34, 153, "MORE DAMAGE / SLOW FIRE", 5, 1)
+        END
+  ELSE IF selectedTrack = 5 THEN
+         FrameBuffer.DrawText(34, 153, "OFFICIAL SOUNDTRACK / ORIGINAL MIX", 5, 1)
+       ELSE
+         FrameBuffer.DrawText(34, 153, "FIVE ORIGINAL CHIP ARRANGEMENTS", 5, 1)
+       END
+  END;
+  Visuals.DrawHint(25, 169, Visuals.MoveHint, "ROW", 7);
+  Visuals.DrawHint(114, 169, Visuals.NavigateHint, "CHANGE", 7);
+  Visuals.DrawHint(247, 169, Visuals.ConfirmHint, "DONE", 12)
+END DrawHangar;
+
+PROCEDURE DrawLanSetup;
+VAR buf : ARRAY [0..15] OF CHAR; i, x : CARDINAL;
+BEGIN
+  Visuals.DrawLogo(tick);
+  Visuals.DrawPanel(28, 77, 264, 89, TRUE);
+  IF selectedMode = LanCoopMode THEN
+    CenterTextBox(28, 264, 84, "LAN CO-OP", 12, 2)
+  ELSE CenterTextBox(28, 264, 84, "LAN VERSUS", 12, 2)
+  END;
+  IF modeIsHost THEN
+    CenterTextBox(28, 264, 107, "HOST GAME", 19, 1);
+    CenterTextBox(28, 264, 122, "SHARE YOUR LAN IP / PORT 37177", 6, 1)
+  ELSE
+    CenterTextBox(28, 264, 106, "JOIN HOST IP", 19, 1);
+    FOR i := 0 TO 3 DO
+      x := 71 + i*43;
+      CardText(ipOctets[i], buf, 3);
+      FrameBuffer.DrawText(VAL(INTEGER, x), 125, buf, 8, 1);
+      IF i < 3 THEN FrameBuffer.DrawText(VAL(INTEGER, x+27), 125, ".", 12, 1) END;
+      IF i = ipCursor THEN
+        FrameBuffer.HLine(VAL(INTEGER, x)-2, VAL(INTEGER, x)+19, 135, 19)
+      END
+    END
+  END;
+  Visuals.CenterHint(28, 264, 143, Visuals.PulseHint, "HOST / JOIN", 12);
+  IF lanError THEN
+    CenterTextBox(28, 264, 155, "NETWORK UNAVAILABLE / PORT IN USE", 16, 1)
+  ELSIF modeIsHost THEN
+    CenterTextBox(28, 264, 155, "PRESS CONNECT / WAIT FOR OTHER PILOT", 5, 1)
+  ELSE
+    Visuals.CenterHint(28, 264, 154, Visuals.FastHint, "UP/DOWN BY 10", 5)
+  END;
+  Visuals.DrawHint(41, 169, Visuals.ConfirmHint, "CONNECT", 12);
+  Visuals.DrawHint(203, 169, Visuals.CancelHint, "BACK", 6)
+END DrawLanSetup;
 
 PROCEDURE DrawPause;
 BEGIN
@@ -1181,9 +1675,12 @@ BEGIN
   IF gameMode = BossRushMode THEN
     CenterTextBox(56, 208, 49, "BOSS RUSH CLEARED", 10, 2);
     CenterTextBox(56, 208, 75, "EIGHT ENCOUNTERS DOWN", 7, 1)
+  ELSIF gameMode = TimeAttackMode THEN
+    CenterTextBox(56, 208, 49, "TIME ATTACK", 10, 2);
+    CenterTextBox(56, 208, 75, "FOUR MINUTE RUN COMPLETE", 7, 1)
   ELSE
     CenterTextBox(56, 208, 49, "CAMPAIGN CLEARED", 10, 2);
-    CenterTextBox(56, 208, 75, "TWENTY SECTORS COMPLETE", 7, 1)
+    CenterTextBox(56, 208, 75, "TWENTY FOUR SECTORS COMPLETE", 7, 1)
   END;
   CenterTextBox(56, 208, 91, "FINAL SCORE", 5, 1);
   CardText(score, buf, 6); CenterTextBox(56, 208, 103, buf, 19, 2);
@@ -1191,12 +1688,34 @@ BEGIN
 END DrawVictory;
 
 PROCEDURE Draw;
-VAR sx, sy, p : INTEGER; pulse : CARDINAL;
+VAR sx, sy, p : INTEGER; pulse, chapter : CARDINAL;
 BEGIN
   pulse := (tick DIV 5) MOD 16;
   IF pulse > 8 THEN pulse := 16-pulse END;
   FrameBuffer.SetPalette(12, 55 + pulse*5, 190 + pulse*5, 245);
   FrameBuffer.SetPalette(19, 255, 205 + pulse*3, 80 + pulse*2);
+  chapter := 0;
+  IF (state # Title) AND (state # Controls) AND
+     (state # Hangar) AND (state # LanSetup) AND
+     (gameMode = CampaignMode) THEN chapter := (wave-1) DIV 3 END;
+  CASE chapter OF
+    0 : FrameBuffer.SetPalette(2, 18, 20, 52);
+        FrameBuffer.SetPalette(3, 35, 38, 82)
+  | 1 : FrameBuffer.SetPalette(2, 31, 16, 65);
+        FrameBuffer.SetPalette(3, 59, 30, 98)
+  | 2 : FrameBuffer.SetPalette(2, 51, 24, 35);
+        FrameBuffer.SetPalette(3, 91, 44, 55)
+  | 3 : FrameBuffer.SetPalette(2, 25, 17, 55);
+        FrameBuffer.SetPalette(3, 48, 29, 94)
+  | 4 : FrameBuffer.SetPalette(2, 12, 39, 57);
+        FrameBuffer.SetPalette(3, 24, 68, 89)
+  | 5 : FrameBuffer.SetPalette(2, 17, 43, 39);
+        FrameBuffer.SetPalette(3, 31, 75, 62)
+  | 6 : FrameBuffer.SetPalette(2, 49, 16, 46);
+        FrameBuffer.SetPalette(3, 84, 28, 70)
+  ELSE FrameBuffer.SetPalette(2, 48, 36, 24);
+       FrameBuffer.SetPalette(3, 81, 62, 37)
+  END;
 
   FrameBuffer.Clear(0);
   DrawNebula;
@@ -1204,6 +1723,14 @@ BEGIN
 
   IF state = Title THEN
     DrawTitle
+  ELSIF state = Controls THEN
+    DrawControls
+  ELSIF state = Hangar THEN
+    DrawHangar
+  ELSIF state = LanSetup THEN
+    DrawLanSetup
+  ELSIF state = LanPlaying THEN
+    Arena.Draw
   ELSE
     sx := 0; sy := 0;
     IF shake > 0 THEN

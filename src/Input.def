@@ -2,7 +2,7 @@ DEFINITION MODULE Input;
 
 TYPE
   Action = (Left, Right, Up, Down, Fire, AltFire, Start, Pause,
-            Menu, Fullscreen, Back, Cancel);
+            Menu, Fullscreen, Back, Cancel, SwitchRole, FastEdit);
   PadFamily = (XboxPad, PlayStationPad, NintendoPad, GenericPad);
 
 PROCEDURE Init;
@@ -16,5 +16,8 @@ PROCEDURE UsingController() : BOOLEAN;
 PROCEDURE ControllerFamily() : PadFamily;
 PROCEDURE MenuStep(action : Action) : BOOLEAN;
 PROCEDURE IsMac() : BOOLEAN;
+PROCEDURE TypedDigit() : INTEGER;
+PROCEDURE TypedDot() : BOOLEAN;
+PROCEDURE TypedBackspace() : BOOLEAN;
 
 END Input.

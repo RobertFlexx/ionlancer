@@ -14,6 +14,7 @@ PROCEDURE RegisterSample(slot : CARDINAL; data : ARRAY OF CARDINAL8; length : CA
 PROCEDURE PlaySample(slot, volume : CARDINAL);
 PROCEDURE SetMusic(enabled : BOOLEAN);
 PROCEDURE SetMusicMode(mode : MusicMode);
+PROCEDURE SetTrack(track : CARDINAL);
 PROCEDURE SetIntensity(level : CARDINAL);
 PROCEDURE SetMasterVolume(volume : CARDINAL);
 PROCEDURE IsAvailable() : BOOLEAN;

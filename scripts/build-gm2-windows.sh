@@ -36,7 +36,7 @@ cd obj
 
 # GCC 16 is the current MSYS2 host compiler. Its C++20 char8_t default is
 # incompatible with GCC 15's bundled libcody, whose u8 literals expect char.
-export CXXFLAGS='-O2 -fno-char8_t'
+export CXXFLAGS='-O2 -fno-char8_t -fpermissive'
 
 "../gcc-$version/configure" \
   --prefix="$prefix" \

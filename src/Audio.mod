@@ -44,6 +44,7 @@ VAR
   sampleActive : ARRAY [0..MaxSampleVoices-1] OF BOOLEAN;
   sampleSlot, samplePos, sampleVolume : ARRAY [0..MaxSampleVoices-1] OF CARDINAL;
   musicMode : MusicMode;
+  soundtrack : CARDINAL;
   menuTheme : ARRAY [0..MaxThemeSamples-1] OF INTEGER16;
   menuThemeLength, menuThemePos, menuThemeGenerated : CARDINAL;
   menuThemeLoaded : BOOLEAN;
@@ -102,6 +103,30 @@ BEGIN
   phase := (phase + step) MOD 65536;
   RETURN result
 END Square;
+
+PROCEDURE Triangle(VAR phase : CARDINAL; freq : CARDINAL; amp : INTEGER) : INTEGER;
+VAR p, step : CARDINAL; value : INTEGER;
+BEGIN
+  IF freq = 0 THEN RETURN 0 END;
+  p := phase;
+  IF p < 16384 THEN value := VAL(INTEGER, p)
+  ELSIF p < 49152 THEN value := 32768 - VAL(INTEGER, p)
+  ELSE value := VAL(INTEGER, p) - 65536
+  END;
+  step := (freq * 65536) DIV SampleRate;
+  phase := (phase + step) MOD 65536;
+  RETURN ScaleSigned(value, amp, 16384)
+END Triangle;
+
+PROCEDURE Pulse(VAR phase : CARDINAL; freq : CARDINAL; amp : INTEGER) : INTEGER;
+VAR step : CARDINAL; value : INTEGER;
+BEGIN
+  IF freq = 0 THEN RETURN 0 END;
+  IF phase < 16384 THEN value := amp ELSE value := -(amp DIV 3) END;
+  step := (freq * 65536) DIV SampleRate;
+  phase := (phase + step) MOD 65536;
+  RETURN value
+END Pulse;
 
 PROCEDURE DurationFor(effect : Effect) : CARDINAL;
 BEGIN
@@ -210,16 +235,21 @@ BEGIN
 END PatternAt;
 
 PROCEDURE SynthMusicSample() : INTEGER;
-CONST
-  StepSamples = 3675;
 VAR
-  step, pos, phrase : CARDINAL;
+  step, pos, phrase, stepSamples : CARDINAL;
   lf, bf, af, pf : CARDINAL;
-  mix, drumAmp : INTEGER;
+  mix, drumAmp, leadAmp : INTEGER;
 BEGIN
-  step := (musicClock DIV StepSamples) MOD PatternLen;
-  pos := musicClock MOD StepSamples;
-  phrase := (musicClock DIV (StepSamples * PatternLen)) MOD 4;
+  CASE soundtrack OF
+    1 : stepSamples := 3308
+  | 2 : stepSamples := 5513
+  | 3 : stepSamples := 4410
+  | 4 : stepSamples := 3675
+  ELSE stepSamples := 4009
+  END;
+  step := (musicClock DIV stepSamples) MOD PatternLen;
+  pos := musicClock MOD stepSamples;
+  phrase := (musicClock DIV (stepSamples * PatternLen)) MOD 4;
 
   CASE phrase OF
     0:
@@ -244,17 +274,19 @@ BEGIN
       pf := PatternAt(padPattern, step + 24)
   END;
 
-  mix := Square(bassPhase, bf, 10 + VAL(INTEGER, intensity));
-  mix := mix + Square(padPhase, pf, 2 + VAL(INTEGER, intensity DIV 2));
+  mix := Triangle(bassPhase, bf, 13 + VAL(INTEGER, intensity));
+  mix := mix + Triangle(padPhase, pf, 3 + VAL(INTEGER, intensity DIV 2));
 
   IF intensity >= 1 THEN
-    mix := mix + Square(leadPhase, lf, 6 + VAL(INTEGER, intensity))
+    leadAmp := 7 + VAL(INTEGER, intensity);
+    IF pos > stepSamples*3 DIV 4 THEN leadAmp := leadAmp DIV 3 END;
+    mix := mix + Pulse(leadPhase, lf, leadAmp)
   END;
   IF intensity >= 2 THEN
     mix := mix + Square(arpPhase, af, 3 + VAL(INTEGER, intensity DIV 2))
   END;
   IF (intensity >= 3) AND ((step MOD 8) >= 4) THEN
-    mix := mix + Square(leadPhase, lf, 2)
+    mix := mix + Triangle(padPhase, pf, 2)
   END;
 
   IF ((step MOD 8) = 0) AND (pos < 980) THEN
@@ -266,7 +298,8 @@ BEGIN
     drumAmp := VAL(INTEGER, (680-pos) * (6 + intensity) DIV 680);
     mix := mix + ScaledNoise(drumAmp, 3)
   END;
-  IF ((step MOD 8) = 6) AND (pos < 320) THEN
+  IF (((step MOD 8) = 6) OR
+      ((soundtrack = 1) AND ((step MOD 8) = 2))) AND (pos < 320) THEN
     drumAmp := VAL(INTEGER, (320-pos) * (4 + intensity) DIV 320);
     mix := mix + ScaledNoise(drumAmp, 5)
   END;
@@ -382,6 +415,105 @@ BEGIN
   padPattern[28] := 494; padPattern[29] := 494; padPattern[30] := 494; padPattern[31] := 494
 END InitPatterns;
 
+PROCEDURE SetTrack(track : CARDINAL);
+VAR i, note, root : CARDINAL;
+    scale : ARRAY [0..7] OF CARDINAL;
+    roots : ARRAY [0..3] OF CARDINAL;
+BEGIN
+  IF track > 5 THEN track := 0 END;
+  soundtrack := track;
+  IF track = 5 THEN RETURN END;
+  InitPatterns;
+  IF track # 0 THEN
+    CASE track OF
+      1 : (* Neon Chase: driving E minor, restless ascending answer. *)
+          scale[0] := 330; scale[1] := 392; scale[2] := 440; scale[3] := 494;
+          scale[4] := 587; scale[5] := 659; scale[6] := 784; scale[7] := 988;
+          roots[0] := 165; roots[1] := 131; roots[2] := 147; roots[3] := 123
+    | 2 : (* Aster Bloom: spacious A minor and suspended notes. *)
+          scale[0] := 220; scale[1] := 262; scale[2] := 330; scale[3] := 392;
+          scale[4] := 440; scale[5] := 523; scale[6] := 659; scale[7] := 784;
+          roots[0] := 110; roots[1] := 87; roots[2] := 98; roots[3] := 131
+    | 3 : (* Event Horizon: dark C minor, staggered low line. *)
+          scale[0] := 262; scale[1] := 311; scale[2] := 392; scale[3] := 466;
+          scale[4] := 523; scale[5] := 622; scale[6] := 784; scale[7] := 932;
+          roots[0] := 131; roots[1] := 104; roots[2] := 116; roots[3] := 98
+    ELSE (* Afterburn: bright G major finale. *)
+          scale[0] := 392; scale[1] := 440; scale[2] := 494; scale[3] := 587;
+          scale[4] := 659; scale[5] := 784; scale[6] := 880; scale[7] := 988;
+          roots[0] := 196; roots[1] := 147; roots[2] := 165; roots[3] := 131
+    END;
+    FOR i := 0 TO PatternLen-1 DO
+      root := roots[i DIV 8];
+      IF ((track = 2) AND ((i MOD 4) # 0)) OR
+         ((track # 2) AND ((i MOD 2) = 1)) THEN
+        bassPattern[i] := 0
+      ELSE bassPattern[i] := root
+      END;
+      padPattern[i] := root*2;
+      CASE i MOD 4 OF
+        0 : arpPattern[i] := root*4
+      | 1 : arpPattern[i] := root*5
+      | 2 : arpPattern[i] := root*6
+      ELSE arpPattern[i] := root*5
+      END;
+      CASE track OF
+        1 : CASE i MOD 8 OF
+              0 : note := 0
+            | 1 : note := 2
+            | 2 : note := 4
+            | 3 : note := 0
+            | 4 : note := 5
+            | 5 : note := 4
+            | 6 : note := 3
+            ELSE note := 2
+            END;
+            IF (i MOD 8) = 3 THEN leadPattern[i] := 0
+            ELSE leadPattern[i] := scale[(note + i DIV 8) MOD 8] END
+      | 2 : CASE i MOD 8 OF
+              0 : note := 0
+            | 1 : note := 0
+            | 2 : note := 2
+            | 3 : note := 4
+            | 4 : note := 5
+            | 5 : note := 4
+            | 6 : note := 2
+            ELSE note := 1
+            END;
+            IF ((i MOD 8) = 1) OR ((i MOD 8) = 5) THEN leadPattern[i] := 0
+            ELSE leadPattern[i] := scale[(note + i DIV 8) MOD 8] END
+      | 3 : CASE i MOD 8 OF
+              0 : note := 0
+            | 1 : note := 0
+            | 2 : note := 3
+            | 3 : note := 2
+            | 4 : note := 5
+            | 5 : note := 4
+            | 6 : note := 2
+            ELSE note := 0
+            END;
+            IF (i MOD 8) = 1 THEN leadPattern[i] := 0
+            ELSE leadPattern[i] := scale[(note + i DIV 8) MOD 8] END
+      ELSE CASE i MOD 8 OF
+             0 : note := 0
+           | 1 : note := 2
+           | 2 : note := 4
+           | 3 : note := 5
+           | 4 : note := 7
+           | 5 : note := 6
+           | 6 : note := 4
+           ELSE note := 2
+           END;
+           IF (i MOD 8) = 7 THEN leadPattern[i] := 0
+           ELSE leadPattern[i] := scale[(note + i DIV 8) MOD 8] END
+      END
+    END
+  END;
+  musicClock := 0;
+  leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0;
+  IF available AND (musicMode = SynthTrack) THEN SDL2.SDL_ClearQueuedAudio(device) END
+END SetTrack;
+
 PROCEDURE LoadTheme;
 VAR
   f : CStdio.FILE;
@@ -442,6 +574,7 @@ BEGIN
   masterVolume := 68;
   musicEnabled := TRUE;
   musicMode := SynthTrack;
+  soundtrack := 0;
   InitPatterns;
   LoadTheme;
   LoadThemeVisualizer;

@@ -82,6 +82,112 @@ BEGIN
   DrawIronwing(x, y, frame, bank, shield, 1)
 END DrawPlayer;
 
+PROCEDURE ShipBody(kind : CARDINAL; x, y : INTEGER; frame : CARDINAL;
+                   bank : INTEGER; shield : BOOLEAN; scale : CARDINAL);
+VAR c, bright : CARDINAL; wing : INTEGER;
+BEGIN
+  IF kind = 0 THEN
+    DrawIronwing(x, y, frame, bank, shield, scale);
+    RETURN
+  END;
+  wing := 0;
+  IF bank < 0 THEN wing := -1 ELSIF bank > 0 THEN wing := 1 END;
+  CASE kind OF
+    1 : c := 11; bright := 12;
+        SHLine(x, y, -2, 2, -6, 7, scale);
+        SHLine(x, y, -3, 3, -4, 6, scale);
+        SHLine(x, y, -5+wing, 5+wing, -1, 11, scale);
+        SHLine(x, y, -8+wing, 8+wing, 0, 13, scale);
+        SHLine(x, y, -11+wing, 11+wing, 1, c, scale);
+        SHLine(x, y, -12+wing, -4+wing, 2, bright, scale);
+        SHLine(x, y, 4+wing, 12+wing, 2, bright, scale);
+        SHLine(x, y, -11+wing, -5+wing, 3, c, scale);
+        SHLine(x, y, 5+wing, 11+wing, 3, c, scale);
+        SHLine(x, y, -9+wing, -6+wing, 4, 7, scale);
+        SHLine(x, y, 6+wing, 9+wing, 4, 7, scale);
+        SHLine(x, y, -3, 3, 5, 6, scale);
+        SVLine(x, y, 0, -11, 5, 7, scale);
+        SPoint(x, y, 0, -12, 8, scale);
+        SPoint(x, y, 0, -7, 12, scale);
+        SPoint(x, y, -3, 7, 18, scale);
+        SPoint(x, y, 3, 7, 18, scale)
+  | 2 : c := 22; bright := 10;
+        SHLine(x, y, -4, 4, -7, 20, scale);
+        SHLine(x, y, -6, 6, -5, 22, scale);
+        SHLine(x, y, -8, 8, -3, 23, scale);
+        SHLine(x, y, -9+wing, 9+wing, -1, c, scale);
+        SHLine(x, y, -11+wing, 11+wing, 1, 21, scale);
+        SHLine(x, y, -13+wing, -7+wing, 2, 22, scale);
+        SHLine(x, y, 7+wing, 13+wing, 2, 22, scale);
+        SHLine(x, y, -13+wing, -7+wing, 4, bright, scale);
+        SHLine(x, y, 7+wing, 13+wing, 4, bright, scale);
+        SHLine(x, y, -12+wing, -8+wing, 6, 23, scale);
+        SHLine(x, y, 8+wing, 12+wing, 6, 23, scale);
+        SHLine(x, y, -7, 7, 6, 22, scale);
+        SHLine(x, y, -2, 2, -2, 9, scale);
+        SHLine(x, y, -2, 2, 0, 10, scale);
+        SVLine(x, y, 0, -9, 3, 7, scale);
+        SPoint(x, y, 0, -10, 8, scale);
+        SPoint(x, y, -5, 8, 19, scale);
+        SPoint(x, y, 5, 8, 19, scale)
+  | 3 : c := 14; bright := 15;
+        SHLine(x, y, -2, 2, -7, 7, scale);
+        SHLine(x, y, -4, 4, -4, 24, scale);
+        SHLine(x, y, -7+wing, -3+wing, -2, c, scale);
+        SHLine(x, y, 3+wing, 7+wing, -2, c, scale);
+        SHLine(x, y, -9+wing, -3+wing, 0, 15, scale);
+        SHLine(x, y, 3+wing, 9+wing, 0, 15, scale);
+        SHLine(x, y, -11+wing, -4+wing, 2, c, scale);
+        SHLine(x, y, 4+wing, 11+wing, 2, c, scale);
+        SHLine(x, y, -12+wing, -6+wing, 4, 13, scale);
+        SHLine(x, y, 6+wing, 12+wing, 4, 13, scale);
+        SHLine(x, y, -10+wing, -7+wing, 6, bright, scale);
+        SHLine(x, y, 7+wing, 10+wing, 6, bright, scale);
+        SHLine(x, y, -3, 3, 5, 24, scale);
+        SVLine(x, y, 0, -11, 6, 7, scale);
+        SPoint(x, y, 0, -12, 8, scale);
+        SPoint(x, y, 0, -6, 15, scale);
+        SPoint(x, y, -4, 8, 18, scale);
+        SPoint(x, y, 4, 8, 18, scale)
+  ELSE c := 17; bright := 19;
+       SHLine(x, y, -2, 2, -8, 31, scale);
+       SHLine(x, y, -3, 3, -6, 30, scale);
+       SHLine(x, y, -5, 5, -3, 29, scale);
+       SHLine(x, y, -7+wing, 7+wing, -1, c, scale);
+       SHLine(x, y, -9+wing, 9+wing, 1, 18, scale);
+       SHLine(x, y, -11+wing, 11+wing, 3, 30, scale);
+       SHLine(x, y, -10+wing, -5+wing, 4, bright, scale);
+       SHLine(x, y, 5+wing, 10+wing, 4, bright, scale);
+       SHLine(x, y, -8+wing, -5+wing, 5, c, scale);
+       SHLine(x, y, 5+wing, 8+wing, 5, c, scale);
+       SHLine(x, y, -5, 5, 6, c, scale);
+       SVLine(x, y, 0, -12, 6, 8, scale);
+       SPoint(x, y, 0, -13, bright, scale);
+       SPoint(x, y, 0, -6, 19, scale);
+       SPoint(x, y, -8, 7, 12, scale);
+       SPoint(x, y, 8, 7, 12, scale)
+  END;
+  IF (frame MOD 4) < 2 THEN
+    SPoint(x, y, -2, 9, bright, scale);
+    SPoint(x, y, 2, 9, bright, scale)
+  ELSE
+    SPoint(x, y, -2, 10, bright, scale);
+    SPoint(x, y, 2, 10, bright, scale)
+  END;
+  IF shield THEN
+    SHLine(x, y, -10, 10, -14, 12, scale);
+    SHLine(x, y, -10, 10, 13, 12, scale);
+    SVLine(x, y, -13, -10, 9, 12, scale);
+    SVLine(x, y, 13, -10, 9, 12, scale)
+  END
+END ShipBody;
+
+PROCEDURE DrawShip(kind : CARDINAL; x, y : INTEGER; frame : CARDINAL;
+                   bank : INTEGER; shield : BOOLEAN);
+BEGIN
+  ShipBody(kind, x, y, frame, bank, shield, 1)
+END DrawShip;
+
 PROCEDURE DrawPlayerPreview(x, y : INTEGER; frame : CARDINAL);
 VAR bob : INTEGER;
 BEGIN
@@ -89,6 +195,14 @@ BEGIN
   IF bob >= 2 THEN bob := 3-bob END;
   DrawIronwing(x, y+bob, frame, 0, FALSE, 2)
 END DrawPlayerPreview;
+
+PROCEDURE DrawShipPreview(kind : CARDINAL; x, y : INTEGER; frame : CARDINAL);
+VAR bob : INTEGER;
+BEGIN
+  bob := VAL(INTEGER, (frame DIV 10) MOD 4);
+  IF bob >= 2 THEN bob := 3-bob END;
+  ShipBody(kind, x, y+bob, frame, 0, FALSE, 2)
+END DrawShipPreview;
 
 PROCEDURE DrawMusicTag(x, y : INTEGER; low, lowMid, highMid, high : CARDINAL);
 VAR bounce, b0, b1, b2, b3 : INTEGER; energy, c : CARDINAL;
@@ -223,9 +337,51 @@ BEGIN
   FrameBuffer.PutPixel(x, y+6, 19)
 END DrawSkimmer;
 
+PROCEDURE DrawLancer(x, y : INTEGER; frame : CARDINAL);
+BEGIN
+  FrameBuffer.VLine(x, y-10, y+7, 12);
+  FrameBuffer.HLine(x-7, x+7, y-2, 13);
+  FrameBuffer.HLine(x-4, x+4, y+1, 11);
+  FrameBuffer.Line(x-7, y-2, x-10, y+5, 14);
+  FrameBuffer.Line(x+7, y-2, x+10, y+5, 14);
+  FrameBuffer.FillRect(x-2, y-4, 5, 6, 8);
+  FrameBuffer.PutPixel(x-9, y+5, 19); FrameBuffer.PutPixel(x+9, y+5, 19)
+END DrawLancer;
+
+PROCEDURE DrawAegis(x, y : INTEGER; frame : CARDINAL);
+BEGIN
+  FrameBuffer.FillRect(x-8, y-6, 17, 12, 23);
+  FrameBuffer.Rect(x-10, y-8, 21, 16, 10);
+  FrameBuffer.HLine(x-5, x+5, y-6, 7);
+  FrameBuffer.FillRect(x-3, y-3, 7, 7, 21);
+  FrameBuffer.PutPixel(x, y, 8);
+  FrameBuffer.VLine(x-11, y-3, y+4, 12);
+  FrameBuffer.VLine(x+11, y-3, y+4, 12)
+END DrawAegis;
+
+PROCEDURE DrawPhantom(x, y : INTEGER; frame : CARDINAL);
+BEGIN
+  FrameBuffer.Line(x, y-8, x-10, y+4, 14);
+  FrameBuffer.Line(x, y-8, x+10, y+4, 14);
+  FrameBuffer.HLine(x-10, x+10, y+4, 15);
+  FrameBuffer.HLine(x-5, x+5, y+1, 24);
+  FrameBuffer.FillRect(x-2, y-4, 5, 5, 16 + ((frame DIV 4) MOD 3));
+  FrameBuffer.PutPixel(x-10, y+5, 8); FrameBuffer.PutPixel(x+10, y+5, 8)
+END DrawPhantom;
+
+PROCEDURE DrawHive(x, y : INTEGER; frame : CARDINAL);
+BEGIN
+  FrameBuffer.FillRect(x-8, y-7, 17, 15, 28);
+  FrameBuffer.Rect(x-11, y-9, 23, 19, 30);
+  FrameBuffer.HLine(x-9, x+9, y-4, 31);
+  FrameBuffer.HLine(x-9, x+9, y+5, 29);
+  FrameBuffer.FillRect(x-3, y-3, 7, 7, 18 + ((frame DIV 5) MOD 2));
+  FrameBuffer.PutPixel(x, y, 8)
+END DrawHive;
+
 PROCEDURE DrawEnemy(kind : CARDINAL; x, y : INTEGER; frame : CARDINAL);
 BEGIN
-  CASE kind MOD 7 OF
+  CASE kind MOD 11 OF
     0 : DrawDrone(x, y, frame)
   | 1 : DrawSpear(x, y, frame)
   | 2 : DrawBomber(x, y, frame)
@@ -233,6 +389,10 @@ BEGIN
   | 4 : DrawHunter(x, y, frame)
   | 5 : DrawBulwark(x, y, frame)
   | 6 : DrawSkimmer(x, y, frame)
+  | 7 : DrawLancer(x, y, frame)
+  | 8 : DrawAegis(x, y, frame)
+  | 9 : DrawPhantom(x, y, frame)
+  | 10: DrawHive(x, y, frame)
   END
 END DrawEnemy;
 
@@ -311,13 +471,78 @@ BEGIN
   FrameBuffer.PutPixel(x, y-15, 12); FrameBuffer.PutPixel(x, y+15, 17)
 END DrawEclipseCore;
 
+PROCEDURE DrawMirrorTwins(x, y : INTEGER; frame : CARDINAL);
+VAR c : CARDINAL;
+BEGIN
+  c := 12 + ((frame DIV 6) MOD 3);
+  FrameBuffer.Line(x-6, y-9, x-28, y+2, 13);
+  FrameBuffer.Line(x+6, y-9, x+28, y+2, 13);
+  FrameBuffer.Line(x-28, y+2, x-8, y+10, 14);
+  FrameBuffer.Line(x+28, y+2, x+8, y+10, 14);
+  FrameBuffer.FillRect(x-25, y-5, 13, 12, 24);
+  FrameBuffer.FillRect(x+13, y-5, 13, 12, 24);
+  FrameBuffer.FillRect(x-22, y-3, 7, 7, c);
+  FrameBuffer.FillRect(x+16, y-3, 7, 7, c);
+  FrameBuffer.HLine(x-8, x+8, y+2, 7);
+  FrameBuffer.PutPixel(x, y+2, 8)
+END DrawMirrorTwins;
+
+PROCEDURE DrawThornMatrix(x, y : INTEGER; frame : CARDINAL);
+VAR d : INTEGER;
+BEGIN
+  FrameBuffer.FillRect(x-19, y-8, 39, 17, 22);
+  FrameBuffer.Rect(x-22, y-11, 45, 23, 10);
+  FOR d := -2 TO 2 DO
+    FrameBuffer.Line(x+d*8, y-9, x+d*8-3, y-15, 20);
+    FrameBuffer.Line(x+d*8, y+8, x+d*8+3, y+14, 21)
+  END;
+  FrameBuffer.FillRect(x-6, y-5, 13, 11, 9);
+  FrameBuffer.FillRect(x-3, y-3, 7, 7, 20);
+  FrameBuffer.PutPixel(x, y, 8)
+END DrawThornMatrix;
+
+PROCEDURE DrawRiftLeviathan(x, y : INTEGER; frame : CARDINAL);
+VAR d : INTEGER;
+BEGIN
+  FrameBuffer.FillRect(x-13, y-11, 27, 21, 23);
+  FrameBuffer.HLine(x-28, x+28, y-4, 14);
+  FrameBuffer.HLine(x-25, x+25, y+7, 15);
+  FrameBuffer.Line(x-28, y-4, x-19, y-13, 12);
+  FrameBuffer.Line(x+28, y-4, x+19, y-13, 12);
+  FOR d := -1 TO 1 DO
+    FrameBuffer.FillRect(x+d*9-2, y-8, 5, 7, 12 + ((frame DIV 5) MOD 2))
+  END;
+  FrameBuffer.FillRect(x-4, y+1, 9, 7, 16);
+  FrameBuffer.PutPixel(x, y+3, 8)
+END DrawRiftLeviathan;
+
+PROCEDURE DrawStarDevourer(x, y : INTEGER; frame : CARDINAL);
+VAR c : CARDINAL;
+BEGIN
+  c := 16 + ((frame DIV 3) MOD 4);
+  FrameBuffer.Line(x, y-17, x-26, y, 25);
+  FrameBuffer.Line(x-26, y, x, y+17, 25);
+  FrameBuffer.Line(x, y+17, x+26, y, 25);
+  FrameBuffer.Line(x+26, y, x, y-17, 25);
+  FrameBuffer.Line(x-30, y-8, x-13, y+13, 14);
+  FrameBuffer.Line(x+30, y-8, x+13, y+13, 14);
+  FrameBuffer.Rect(x-10, y-10, 21, 21, 19);
+  FrameBuffer.FillRect(x-7, y-7, 15, 15, 24);
+  FrameBuffer.FillRect(x-4, y-4, 9, 9, c);
+  FrameBuffer.PutPixel(x, y, 8)
+END DrawStarDevourer;
+
 PROCEDURE DrawBoss(kind : CARDINAL; x, y : INTEGER; frame, health, maxHealth : CARDINAL);
 BEGIN
-  CASE kind MOD 4 OF
+  CASE kind MOD 8 OF
     0 : DrawNullWarden(x, y, frame)
   | 1 : DrawPrismSeraph(x, y, frame)
   | 2 : DrawIronReaver(x, y, frame)
   | 3 : DrawEclipseCore(x, y, frame)
+  | 4 : DrawMirrorTwins(x, y, frame)
+  | 5 : DrawThornMatrix(x, y, frame)
+  | 6 : DrawRiftLeviathan(x, y, frame)
+  | 7 : DrawStarDevourer(x, y, frame)
   END
 END DrawBoss;
 
@@ -351,7 +576,7 @@ BEGIN
     FrameBuffer.PutPixel(x-6, y, 8); FrameBuffer.PutPixel(x+6, y, 8);
     FrameBuffer.PutPixel(x, y-6, 8); FrameBuffer.PutPixel(x, y+6, 8)
   END;
-  CASE kind MOD 4 OF
+  CASE kind MOD 7 OF
     0 : FrameBuffer.HLine(x-2, x+2, y, 19); FrameBuffer.VLine(x, y-2, y+2, 19)
   | 1 : FrameBuffer.VLine(x-2, y-2, y+2, 12); FrameBuffer.VLine(x+2, y-2, y+2, 12)
   | 2 : FrameBuffer.PutPixel(x, y-2, 15); FrameBuffer.HLine(x-2, x+2, y-1, 15);
@@ -359,6 +584,9 @@ BEGIN
         FrameBuffer.PutPixel(x, y+2, 15)
   | 3 : FrameBuffer.HLine(x-2, x+2, y, 16); FrameBuffer.VLine(x, y-2, y+2, 16);
         FrameBuffer.Rect(x-3, y-3, 7, 7, 8)
+  | 4 : FrameBuffer.HLine(x-3, x+3, y, 12); FrameBuffer.VLine(x, y-3, y+3, 8)
+  | 5 : FrameBuffer.DrawText(x-2, y-3, "$", 19, 1)
+  | 6 : FrameBuffer.Rect(x-3, y-3, 7, 7, 15); FrameBuffer.PutPixel(x, y, 8)
   END
 END DrawPowerup;
 
@@ -453,6 +681,7 @@ BEGIN
   CASE hint OF
     NavigateHint : RETURN 18
   | MoveHint : RETURN 30
+  | FastHint : RETURN 30
   | CancelHint : RETURN 24
   | FullscreenHint : IF Input.IsMac() THEN RETURN 42 ELSE RETURN 24 END
   ELSE RETURN 12
@@ -461,7 +690,8 @@ END KeyWidth;
 
 PROCEDURE PadWidth(hint : ControlHint) : INTEGER;
 BEGIN
-  IF (hint = PauseHint) OR (hint = MenuHint) OR (hint = FullscreenHint) THEN
+  IF (hint = PauseHint) OR (hint = MenuHint) OR (hint = FullscreenHint) OR
+     (hint = FastHint) THEN
     RETURN 16
   END;
   RETURN 12
@@ -496,6 +726,7 @@ BEGIN
   | ConfirmHint, FireHint : FrameBuffer.DrawText(x+3, y+2, "Z", 8, 1)
   | CancelHint : FrameBuffer.DrawText(x+3, y+2, "ESC", 8, 1)
   | PulseHint : FrameBuffer.DrawText(x+3, y+2, "X", 8, 1)
+  | FastHint : FrameBuffer.DrawText(x+3, y+2, "CTRL", 8, 1)
   | PauseHint : FrameBuffer.DrawText(x+3, y+2, "P", 8, 1)
   | MenuHint : FrameBuffer.DrawText(x+3, y+2, "M", 8, 1)
   | FullscreenHint :
@@ -577,7 +808,7 @@ BEGIN
   | ConfirmHint, FireHint : DrawFace(x, y, 0)
   | CancelHint : DrawFace(x, y, 1)
   | PulseHint : DrawFace(x, y, 2)
-  | PauseHint, MenuHint, FullscreenHint :
+  | PauseHint, MenuHint, FullscreenHint, FastHint :
       FrameBuffer.FillRect(x+1, y+2, 15, 9, 2);
       FrameBuffer.FillRect(x, y, 16, 10, 3);
       FrameBuffer.Rect(x, y, 16, 10, 6);
@@ -588,6 +819,14 @@ BEGIN
         FrameBuffer.Line(x+4, y+5, x+7, y+3, 12);
         FrameBuffer.Line(x+4, y+5, x+7, y+7, 12);
         FrameBuffer.HLine(x+7, x+11, y+5, 12)
+      ELSIF hint = FastHint THEN
+        IF Input.ControllerFamily() = Input.PlayStationPad THEN
+          FrameBuffer.DrawText(x+2, y+2, "R1", 19, 1)
+        ELSIF Input.ControllerFamily() = Input.NintendoPad THEN
+          FrameBuffer.DrawText(x+5, y+2, "R", 19, 1)
+        ELSE
+          FrameBuffer.DrawText(x+2, y+2, "RB", 19, 1)
+        END
       ELSE
         FrameBuffer.DrawText(x+2, y+2, "R3", 12, 1)
       END

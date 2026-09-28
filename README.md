@@ -1,6 +1,6 @@
 # IONLANCER
 
-IONLANCER is a small arcade shooter written in GNU Modula-2 with SDL2. It runs on a 320x180 framebuffer, has a few game modes, several bosses, controller support, and a soundtrack called **Endless Endeavor** (as seen on my [youtube!](https://www.youtube.com/watch?v=IQyR7Mr_JS0))
+IONLANCER is a pixel-art arcade shooter written in GNU Modula-2 with SDL2. It runs on a 320x180 framebuffer. The expanded game has five playable ships, seven run modifiers, seven modes, eleven enemy types, eight bosses, and six selectable in-game soundtracks. The official soundtrack, **[Endless Endeavor](https://www.youtube.com/watch?v=IQyR7Mr_JS0)**, plays on the title screen and is available in the hangar.
 
 I mostly made it because writing this kind of game in Modula-2 sounded fun.
 I made it, debugged it, then uploaded it as one.
@@ -62,8 +62,12 @@ On macOS the native driver is `cocoa`, which is what `--auto` picks:
 ./run.sh --cocoa
 ```
 
-Controls are shown in-game. The basics are WASD/arrows to move, Z/Space to shoot,
-X/Shift for pulse, P to pause, M for the menu, and F11 for fullscreen. On macOS,
+Controls are shown in-game. Left/right selects a mode, up/down selects a ship,
+and X/Shift opens the hangar. M opens the controller-aware controls guide from
+the title. In the hangar, up/down chooses a row and left/right
+changes the ship, modifier, or music. During play, WASD/arrows move, Z/Space
+shoots, X/Shift uses a charged pulse, P pauses, M returns to the menu, and F11
+toggles fullscreen. On macOS,
 Command+Enter and Control+Command+F also toggle fullscreen. The picture stays
 centered and keeps its pixel art aspect ratio when the window changes size.
 
@@ -80,9 +84,54 @@ symbols when SDL identifies the controller. Generic pads use SDL's A/B/X layout.
 | Return to title | Back/View/Share button; east face button in menus |
 | Toggle fullscreen | Right stick click |
 
+On the title screen, the D-pad or either stick changes modes with left/right
+and ships with up/down. The west face button opens the hangar. In the hangar,
+up/down picks a row and left/right changes its choice. The game displays button
+art for the last controller family used. Back/View/Share opens the controls
+guide on the title screen.
+
 The title, pause, and result screens also accept the south face button to confirm
 and the east face button to go back. The east face button activates pulse during
 play.
+
+## game modes
+
+| Mode | Objective |
+| --- | --- |
+| Campaign | Fight through eight chapters and 24 sectors, each ending in a different boss. |
+| Endless | Survive escalating waves and chase a high score. |
+| Boss Rush | Face all eight bosses without ordinary waves. |
+| Gauntlet | Faster waves and a boss every two waves. |
+| Time Attack | Score as much as possible in four minutes. |
+| LAN Co-op | Two pilots share eight survival waves, two bosses, and a pulse-powered revive. |
+| LAN Versus | Duel for five rounds, with a three-minute match clock. |
+
+The hangar offers Ironwing (balanced), Kestrel (fast fire), Bastion (extra hull
+and shield), Specter (pulse specialist), and Comet (heavy shots). Its seven
+modifiers trade power for a cost: Standard, Overdrive, Fortify, Siphon, Bounty,
+Nova, and Focus Lens. You can also choose Ion Drift, Neon Chase, Aster Bloom,
+Event Horizon, Afterburn, or the official Endless Endeavor soundtrack for your run.
+
+Enemy drops now include shields, rapid fire, triple shots, repairs, pulse
+energy, score caches, and brief invulnerability. The campaign's chapter cards
+and changing nebula colors mark your progress through its eight boss fights.
+
+### LAN play
+
+Both players need the same game version and access to each other on a local
+network. The host selects **LAN Co-op** or **LAN Versus**, chooses **Host game**,
+and presses Connect. The guest selects the same mode, switches to **Join host
+IP**, enters the host's IPv4 address, and presses Connect. The game uses UDP
+port **37177**. Each player brings their own ship and modifier from the hangar.
+
+Type an address with the number keys and periods, or use left/right to choose
+an octet and up/down to change it with a controller. Hold the right bumper (or
+Ctrl on a keyboard) while pressing up/down to change an octet by ten. The west
+face button switches between hosting and joining; the east face button returns
+to the title. The host controls the match simulation and sends snapshots to
+the guest. If the connection briefly drops, the game waits for the same guest
+to reconnect. Co-op pilots can spend a full pulse to revive a fallen teammate;
+versus pilots earn pulse from hits.
 
 ## macOS
 

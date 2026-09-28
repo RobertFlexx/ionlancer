@@ -112,8 +112,11 @@ rm -rf "$BUILDDIR"
 mkdir -p "$BUILDDIR"
 
 COMMON="-fpim4 -I src -Wall $SDL_CFLAGS"
-MODULES="RNG FrameBuffer Input Audio Visuals Game Platform"
+MODULES="RNG FrameBuffer Input Audio Visuals Arena Game Platform"
 OBJECTS=
+
+"${CC:-cc}" -O2 -c src/LanSocket.c -o "$BUILDDIR/LanSocket.o"
+OBJECTS="$BUILDDIR/LanSocket.o"
 
 printf '%s\n' "== IONLANCER gcc16-ready-28: $MODE =="
 

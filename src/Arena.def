@@ -1,0 +1,11 @@
+DEFINITION MODULE Arena;
+
+PROCEDURE Start(cooperative, hosting : BOOLEAN;
+                a, b, c, d, ship, modifier : CARDINAL) : BOOLEAN;
+PROCEDURE Update;
+PROCEDURE Draw;
+PROCEDURE Finished() : BOOLEAN;
+PROCEDURE Connected() : BOOLEAN;
+PROCEDURE Close;
+
+END Arena.

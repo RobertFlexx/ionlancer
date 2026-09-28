@@ -15,8 +15,10 @@ mkdir -p "$build" "$dist"
 
 read -r -a cflags <<< "$(pkg-config --cflags sdl2)"
 read -r -a libs <<< "$(pkg-config --libs sdl2)"
-modules=(RNG FrameBuffer Input Audio Visuals Game Platform)
+modules=(RNG FrameBuffer Input Audio Visuals Arena Game Platform)
 objects=()
+gcc -O3 -c src/LanSocket.c -o "$build/LanSocket.o"
+objects+=("$build/LanSocket.o")
 for module in "${modules[@]}"; do
   obj="$build/$module.o"
   "$gm2" -fpim4 -I src -Wall -O3 "${cflags[@]}" -c "src/$module.mod" -o "$obj"
@@ -25,7 +27,7 @@ done
 "$gm2" -fpim4 -I src -Wall -O3 "${cflags[@]}" -fscaffold-main \
   -c src/Main.mod -o "$build/Main.o"
 "$gm2" -fpim4 -O3 "$build/Main.o" "${objects[@]}" \
-  -o "$dist/ionlancer.exe" "${libs[@]}"
+  -o "$dist/ionlancer.exe" "${libs[@]}" -lws2_32
 
 cp -a assets "$dist/"
 cp README.md LICENSE "$dist/"
