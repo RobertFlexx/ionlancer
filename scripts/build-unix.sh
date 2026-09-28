@@ -3,15 +3,24 @@ set -eu
 
 MODE=${1:-release}
 TARGET=${2:-ionlancer}
-GM2=${GM2:-gm2}
-PKG_CONFIG=${PKG_CONFIG:-pkg-config}
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-command -v "$GM2" >/dev/null 2>&1 || { echo "error: gm2 not found" >&2; exit 1; }
-command -v "$PKG_CONFIG" >/dev/null 2>&1 || { echo "error: pkg-config not found" >&2; exit 1; }
-"$PKG_CONFIG" --exists sdl2 || { echo "error: SDL2 development files not found (pkg-config sdl2)" >&2; exit 1; }
+# Locate gm2 and SDL2 wherever they happen to live. Honours $GM2 and
+# $PKG_CONFIG when set, otherwise searches PATH, Homebrew, MacPorts, /usr/local,
+# /opt and the Nix/Guix stores. macOS included.
+ION_TOOLS_SOURCED=1
+. "$ROOT/scripts/tools.sh"
+ion_resolve_toolchain
+
+GM2=$ION_GM2
+PKG_CONFIG=$ION_PKG_CONFIG
+
+case "$(ion_os)" in
+  macos) HOST_KIND=Darwin ;;
+  *)     HOST_KIND=Linux ;;
+esac
 
 SDL_CFLAGS=$($PKG_CONFIG --cflags sdl2)
 SDL_PKG_LIBS=$($PKG_CONFIG --libs sdl2)
@@ -21,7 +30,7 @@ SDL_LIBFILE=
 find_sdl_file() {
   [ -n "$SDL_LIBDIR" ] || return 1
 
-  case $(uname -s 2>/dev/null || echo unknown) in
+  case "$HOST_KIND" in
     Darwin)
       for candidate in "$SDL_LIBDIR/libSDL2.dylib" "$SDL_LIBDIR"/libSDL2-2.0.*.dylib; do
         if [ -f "$candidate" ] || [ -L "$candidate" ]; then
@@ -59,7 +68,7 @@ elf_interpreter() {
 
 HOST_INTERP=
 DYNAMIC_LINKER_FLAG=
-if [ "$(uname -s 2>/dev/null || echo unknown)" = "Linux" ]; then
+if [ "$HOST_KIND" = Linux ]; then
   HOST_SH=$(command -v sh 2>/dev/null || true)
   if [ -n "$HOST_SH" ]; then
     HOST_INTERP=$(elf_interpreter "$HOST_SH")
@@ -71,6 +80,7 @@ if [ "$(uname -s 2>/dev/null || echo unknown)" = "Linux" ]; then
   fi
 fi
 
+WHOLE_PROGRAM=
 case "$MODE" in
   release)
     OPTFLAGS="-O3"
@@ -78,6 +88,7 @@ case "$MODE" in
     ;;
   aggressive)
     OPTFLAGS="-O3 -flto -fm2-whole-program"
+    WHOLE_PROGRAM=1
     OUT="$TARGET"
     ;;
   debug)
@@ -100,14 +111,22 @@ OBJECTS=
 
 printf '%s\n' "== IONLANCER gcc16-ready-28: $MODE =="
 
-for module in $MODULES; do
-  obj="$BUILDDIR/$module.o"
-  "$GM2" $COMMON $OPTFLAGS -c "src/$module.mod" -o "$obj"
-  OBJECTS="$OBJECTS $obj"
-done
+if [ -n "$WHOLE_PROGRAM" ]; then
+  # -fm2-whole-program makes every object file self-contained, so the program
+  # has to be produced by a single compile of the program module; compiling the
+  # implementation modules one by one yields duplicate symbols at link time.
+  MAINOBJ="$BUILDDIR/whole-program.o"
+  "$GM2" $COMMON $OPTFLAGS -c -fscaffold-main src/Main.mod -o "$MAINOBJ"
+else
+  for module in $MODULES; do
+    obj="$BUILDDIR/$module.o"
+    "$GM2" $COMMON $OPTFLAGS -c "src/$module.mod" -o "$obj"
+    OBJECTS="$OBJECTS $obj"
+  done
 
-MAINOBJ="$BUILDDIR/Main.o"
-"$GM2" $COMMON $OPTFLAGS -c -fscaffold-main src/Main.mod -o "$MAINOBJ"
+  MAINOBJ="$BUILDDIR/Main.o"
+  "$GM2" $COMMON $OPTFLAGS -c -fscaffold-main src/Main.mod -o "$MAINOBJ"
+fi
 
 link_normal() {
   "$GM2" -fpim4 $OPTFLAGS "$MAINOBJ" $OBJECTS -o "$OUT" $DYNAMIC_LINKER_FLAG $SDL_PKG_LIBS
@@ -115,7 +134,7 @@ link_normal() {
 
 stage_sdl() {
   [ -n "$SDL_LIBFILE" ] || return 1
-  case $(uname -s 2>/dev/null || echo unknown) in
+  case "$HOST_KIND" in
     Darwin) SDL_STAGE_FILE="$BUILDDIR/libSDL2-link.dylib" ;;
     *)      SDL_STAGE_FILE="$BUILDDIR/libSDL2-link.so" ;;
   esac
@@ -144,7 +163,7 @@ link_staged() {
   make_staged_flags
 
   ELF_ALLOW=
-  case $(uname -s 2>/dev/null || echo unknown) in
+  case "$HOST_KIND" in
     Linux) ELF_ALLOW="-Wl,--allow-shlib-undefined" ;;
   esac
 
@@ -159,7 +178,7 @@ else
   link_staged
 fi
 
-if [ "$(uname -s 2>/dev/null || echo unknown)" = "Linux" ]; then
+if [ "$HOST_KIND" = Linux ]; then
   GAME_INTERP=$(elf_interpreter "./$OUT")
   if [ -n "$GAME_INTERP" ]; then
     if [ ! -x "$GAME_INTERP" ]; then
@@ -169,7 +188,7 @@ if [ "$(uname -s 2>/dev/null || echo unknown)" = "Linux" ]; then
   fi
 fi
 
-if [ "$(uname -s 2>/dev/null || echo unknown)" = "Linux" ] && command -v ldd >/dev/null 2>&1; then
+if [ "$HOST_KIND" = Linux ] && command -v ldd >/dev/null 2>&1; then
   if LDD_OUT=$(ldd "./$OUT" 2>&1); then
     :
   else

@@ -2,6 +2,8 @@ ionlancer
 ionlancer.exe
 ionlancer-debug
 build/
+dist/
 *.o
 *.s
 *.lst
+.DS_Store
