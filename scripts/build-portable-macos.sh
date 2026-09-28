@@ -70,16 +70,15 @@ FRAMEWORKS="$APP/Contents/Resources/Frameworks"
 # while walking a library that has not been bundled yet.
 EXE_SOURCE_DIR=$(dirname -- "$TARGET")
 
-# Absolute dylib references we are willing to embed. Anything under /usr/lib or
-# /System ships with the OS and must be left alone. A reference whose basename
-# matches the image itself is that image's LC_ID_DYLIB, not a real dependency.
-embeddable_deps() {
+# Dylib references we need to resolve and embed. MacPorts' Modula-2 runtime
+# uses @rpath references, so ignoring non-absolute names leaves a bundle that
+# passes otool's absolute-path check but aborts as soon as dyld starts it.
+image_deps() {
   self=$(basename -- "$1")
   otool -L "$1" 2>/dev/null | tail -n +2 | awk '{ print $1 }' | while IFS= read -r dep; do
     case "$dep" in
-      ''|/System/*|/usr/lib/*|@*) continue ;;
+      ''|/System/*|/usr/lib/*) continue ;;
     esac
-    [ -f "$dep" ] || continue
     [ "$(basename -- "$dep")" = "$self" ] && continue
     echo "$dep"
   done
@@ -130,6 +129,19 @@ find_sibling() {
     fi
   done
   return 1
+}
+
+resolve_dep() {
+  img=$1
+  src_dir=$2
+  dep=$3
+  case "$dep" in
+    @rpath/*) find_sibling "$img" "$src_dir" "${dep#@rpath/}" ;;
+    @loader_path/*) printf '%s\n' "$src_dir/${dep#@loader_path/}" ;;
+    @executable_path/*) printf '%s\n' "$EXE_SOURCE_DIR/${dep#@executable_path/}" ;;
+    /*) printf '%s\n' "$dep" ;;
+    *) return 1 ;;
+  esac
 }
 
 # Canonical path, used to avoid bundling the same library twice under two names
@@ -229,10 +241,18 @@ while [ -s "$QUEUE" ] && [ "$depth" -lt 16 ]; do
       rebase='@loader_path'
     fi
 
-    for dep in $(embeddable_deps "$image"); do
-      bundle_one "$dep"
+    for dep in $(image_deps "$image"); do
+      src=$(resolve_dep "$image" "$src_dir" "$dep") || {
+        echo "error: could not resolve $dep in $image" >&2
+        exit 1
+      }
+      [ -f "$src" ] || {
+        echo "error: missing dependency $dep (resolved to $src)" >&2
+        exit 1
+      }
+      bundle_one "$src"
       if [ "$BUNDLED_NEW" = 1 ]; then
-        printf '%s|%s\n' "$FRAMEWORKS/$BUNDLED_NAME" "$(canonical "$dep")" >> "$NEXT"
+        printf '%s|%s\n' "$FRAMEWORKS/$BUNDLED_NAME" "$(canonical "$src")" >> "$NEXT"
       fi
       install_name_tool -change "$dep" "$rebase/$BUNDLED_NAME" "$image" 2>/dev/null || {
         echo "error: could not rebase $dep in $image" >&2

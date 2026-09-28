@@ -4,6 +4,9 @@ set -euo pipefail
 # MSYS2 UCRT64 does not ship GNU Modula-2. Build its GCC frontend and runtime
 # from a pinned upstream release, then cache the private installation in CI.
 [[ ${MSYSTEM:-} == UCRT64 ]] || { echo 'error: use the MSYS2 UCRT64 shell' >&2; exit 1; }
+for tool in gcc g++ make flex bison m4 sha512sum; do
+  command -v "$tool" >/dev/null || { echo "error: missing $tool" >&2; exit 1; }
+done
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 prefix="$root/.gm2"
