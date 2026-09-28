@@ -232,6 +232,19 @@ ion_resolve_pkg_config() {
   return 1
 }
 
+# Add one candidate directory to the SDL2 search path list, but only if it
+# really exists, really carries an SDL2 .pc file, and is not listed already.
+ion_add_sdl2_dir() {
+  [ -n "$1" ] || return 0
+  [ -d "$1" ] || return 0
+  [ -f "$1/sdl2.pc" ] || return 0
+  case ":$ion_sdl2_additions:" in
+    *":$1:"*) return 0 ;;
+  esac
+  ion_sdl2_additions="$ion_sdl2_additions${ion_sdl2_additions:+:}$1"
+  return 0
+}
+
 # Echo the PKG_CONFIG_PATH additions needed for `pkg-config sdl2` to work.
 # Prints nothing when the default search path already finds SDL2, so the
 # common case stays a no-op.
@@ -241,23 +254,32 @@ ion_resolve_sdl2_search_path() {
 
   "$pkg_config" --exists sdl2 2>/dev/null && return 0
 
-  additions=''
-  for dir in ${ION_SDL2_PREFIXES:+"$ION_SDL2_PREFIXES"} $(ion_pkgconfig_dirs); do
-    [ -d "$dir" ] || continue
-    # Only add directories that actually carry an SDL2 .pc file.
-    [ -f "$dir/sdl2.pc" ] || continue
-    case ":$additions:" in
-      *":$dir:"*) continue ;;
-    esac
-    additions="$additions${additions:+:}$dir"
+  ion_sdl2_additions=''
+
+  # $ION_SDL2_PREFIXES is colon separated, like PKG_CONFIG_PATH itself, so it
+  # has to be split on colons. Handing the whole string to pkg-config as one
+  # path would quietly find nothing.
+  ion_saved_ifs=$IFS
+  IFS=':'
+  for dir in ${ION_SDL2_PREFIXES:-}; do
+    ion_add_sdl2_dir "$dir"
   done
+  IFS=$ion_saved_ifs
+
+  for dir in $(ion_pkgconfig_dirs); do
+    ion_add_sdl2_dir "$dir"
+  done
+
+  additions=$ion_sdl2_additions
 
   [ -n "$additions" ] || return 0
 
   # Confirm the additions actually resolve before handing them back, so we
   # never pollute PKG_CONFIG_PATH with a guess.
-  saved=$PKG_CONFIG_PATH
-  PKG_CONFIG_PATH="$additions${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  # ${VAR:-} rather than $VAR: this file is sourced by scripts running under
+  # `set -u`, and PKG_CONFIG_PATH is usually not set at all on a fresh shell.
+  saved=${PKG_CONFIG_PATH:-}
+  PKG_CONFIG_PATH="$additions${saved:+:$saved}"
   export PKG_CONFIG_PATH
   if "$pkg_config" --exists sdl2 2>/dev/null; then
     echo "$additions"
