@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x86_64
+          - runner: macos-15
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: melusina-org/setup-macports@v1
+      - name: Install compiler and SDL2
+        run: port install gcc15 libsdl2 pkgconfig
+      - name: Build and package
+        env:
+          GM2: /opt/local/bin/gm2-mp-15
+          PKG_CONFIG: /opt/local/bin/pkg-config
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          make release
+          ./scripts/build-portable-macos.sh ionlancer
+          test -s "dist/ionlancer-macos-${{ matrix.arch }}.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ionlancer-macos-${{ matrix.arch }}
+          path: dist/ionlancer-macos-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler and SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gm2-14 libsdl2-dev pkg-config binutils
+      - name: Build and package
+        env:
+          GM2: gm2-14
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          make release
+          ./scripts/build-portable-linux.sh ionlancer
+          test -s "dist/ionlancer-linux-${{ matrix.arch }}.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ionlancer-linux-${{ matrix.arch }}
+          path: dist/ionlancer-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows x86_64
+    runs-on: windows-2025
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make diffutils tar xz curl texinfo
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gmp
+            mingw-w64-ucrt-x86_64-mpfr
+            mingw-w64-ucrt-x86_64-mpc
+            mingw-w64-ucrt-x86_64-isl
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-pkgconf
+      - uses: actions/cache@v4
+        with:
+          path: .gm2
+          key: gm2-15.2.0-ucrt64-x86_64-v1
+      - name: Build GNU Modula-2
+        shell: msys2 {0}
+        run: ./scripts/build-gm2-windows.sh
+      - name: Build Windows game and collect DLLs
+        shell: msys2 {0}
+        run: ./scripts/build-portable-windows.sh
+      - name: Smoke test and package
+        shell: pwsh
+        run: |
+          $folder = (Resolve-Path 'dist/ionlancer-windows-x86_64').Path
+          $env:SDL_VIDEODRIVER = 'dummy'
+          $env:SDL_AUDIODRIVER = 'dummy'
+          $process = Start-Process -FilePath "$folder/ionlancer.exe" -WorkingDirectory $folder -PassThru
+          Start-Sleep -Seconds 3
+          if ($process.HasExited) { throw "Game exited during Windows smoke test: $($process.ExitCode)" }
+          $process.Kill()
+          $process.WaitForExit()
+          Compress-Archive -Path 'dist/ionlancer-windows-x86_64' -DestinationPath 'dist/ionlancer-windows-x86_64.zip'
+          if ((Get-Item 'dist/ionlancer-windows-x86_64.zip').Length -eq 0) { throw 'Windows archive is empty' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ionlancer-windows-x86_64
+          path: dist/ionlancer-windows-x86_64.zip
+          if-no-files-found: error
+
+  windows_arm:
+    name: Windows ARM64 compatibility
+    needs: windows
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ionlancer-windows-x86_64
+          path: .
+      - name: Smoke test x64 game on Windows ARM64
+        shell: pwsh
+        run: |
+          Expand-Archive -Path 'ionlancer-windows-x86_64.zip' -DestinationPath .
+          $folder = (Resolve-Path 'ionlancer-windows-x86_64').Path
+          $env:SDL_VIDEODRIVER = 'dummy'
+          $env:SDL_AUDIODRIVER = 'dummy'
+          $process = Start-Process -FilePath "$folder/ionlancer.exe" -WorkingDirectory $folder -PassThru
+          Start-Sleep -Seconds 3
+          if ($process.HasExited) { throw "Game exited on Windows ARM64: $($process.ExitCode)" }
+          $process.Kill()
+          $process.WaitForExit()
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, linux, windows_arm]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ionlancer-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify release assets
+        run: |
+          test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
+          for platform in macos linux; do
+            for arch in x86_64 arm64 aarch64; do
+              case "$platform:$arch" in
+                macos:aarch64|linux:arm64) continue ;;
+              esac
+              test -s "release-assets/ionlancer-$platform-$arch.tar.gz"
+            done
+          done
+          test -s release-assets/ionlancer-windows-x86_64.zip
+          cd release-assets
+          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.zip
+            release-assets/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+          generate_release_notes: true

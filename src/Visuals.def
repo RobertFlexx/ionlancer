@@ -1,5 +1,9 @@
 DEFINITION MODULE Visuals;
 
+TYPE
+  ControlHint = (NavigateHint, MoveHint, ConfirmHint, CancelHint,
+                 FireHint, PulseHint, PauseHint, MenuHint, FullscreenHint);
+
 PROCEDURE DrawPlayer(x, y : INTEGER; frame : CARDINAL; bank : INTEGER;
                      shield : BOOLEAN);
 PROCEDURE DrawEnemy(kind : CARDINAL; x, y : INTEGER; frame : CARDINAL);
@@ -14,5 +18,10 @@ PROCEDURE DrawPlayerPreview(x, y : INTEGER; frame : CARDINAL);
 PROCEDURE DrawMusicTag(x, y : INTEGER; low, lowMid, highMid, high : CARDINAL);
 PROCEDURE DrawPanel(x, y, w, h : INTEGER; bright : BOOLEAN);
 PROCEDURE DrawHeart(x, y : INTEGER; filled : BOOLEAN);
+PROCEDURE HintWidth(hint : ControlHint; label : ARRAY OF CHAR) : CARDINAL;
+PROCEDURE DrawHint(x, y : INTEGER; hint : ControlHint;
+                   label : ARRAY OF CHAR; colour : CARDINAL);
+PROCEDURE CenterHint(x, w, y : INTEGER; hint : ControlHint;
+                     label : ARRAY OF CHAR; colour : CARDINAL);
 
 END Visuals.

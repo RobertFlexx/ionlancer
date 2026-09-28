@@ -2,7 +2,8 @@ DEFINITION MODULE Input;
 
 TYPE
   Action = (Left, Right, Up, Down, Fire, AltFire, Start, Pause,
-            Menu, Fullscreen, Back);
+            Menu, Fullscreen, Back, Cancel);
+  PadFamily = (XboxPad, PlayStationPad, NintendoPad, GenericPad);
 
 PROCEDURE Init;
 PROCEDURE Shutdown;
@@ -11,5 +12,9 @@ PROCEDURE Held(action : Action) : BOOLEAN;
 PROCEDURE Pressed(action : Action) : BOOLEAN;
 PROCEDURE TakePressed(action : Action) : BOOLEAN;
 PROCEDURE ClearPressed;
+PROCEDURE UsingController() : BOOLEAN;
+PROCEDURE ControllerFamily() : PadFamily;
+PROCEDURE MenuStep(action : Action) : BOOLEAN;
+PROCEDURE IsMac() : BOOLEAN;
 
 END Input.

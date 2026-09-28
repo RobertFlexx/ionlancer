@@ -7,6 +7,7 @@ CONST
   SDL_INIT_TIMER = 1;
   SDL_INIT_AUDIO = 16;
   SDL_INIT_VIDEO = 32;
+  SDL_INIT_GAMECONTROLLER = 8192;
   SDL_INIT_EVENTS = 16384;
 
   SDL_WINDOW_SHOWN = 4;
@@ -29,7 +30,7 @@ VAR
   window : SDL2.SDL_Window;
   renderer : SDL2.SDL_Renderer;
   texture : SDL2.SDL_Texture;
-  quitRequested, fullscreen : BOOLEAN;
+  quitRequested : BOOLEAN;
   title : ARRAY [0..31] OF CHAR;
 
 PROCEDURE CopyZ(VAR dst : ARRAY OF CHAR; src : ARRAY OF CHAR);
@@ -62,10 +63,11 @@ PROCEDURE Open() : BOOLEAN;
 VAR flags : CARDINAL32; soundOK : BOOLEAN;
 BEGIN
   window := NIL; renderer := NIL; texture := NIL;
-  quitRequested := FALSE; fullscreen := FALSE;
+  quitRequested := FALSE;
   CopyZ(title, "IONLANCER - GNU MODULA-2");
 
-  flags := VAL(CARDINAL32, SDL_INIT_TIMER + SDL_INIT_AUDIO + SDL_INIT_VIDEO + SDL_INIT_EVENTS);
+  flags := VAL(CARDINAL32, SDL_INIT_TIMER + SDL_INIT_AUDIO + SDL_INIT_VIDEO +
+                           SDL_INIT_GAMECONTROLLER + SDL_INIT_EVENTS);
   IF SDL2.SDL_Init(flags) # 0 THEN RETURN FALSE END;
 
   window := SDL2.SDL_CreateWindow(ADR(title), SDL_WINDOWPOS_CENTERED,
@@ -138,8 +140,7 @@ BEGIN
   IF dst.w < 1 THEN dst.w := 1 END;
   IF dst.h < 1 THEN dst.h := 1 END;
   dst.x := (outputW - dst.w) DIV 2;
-  (* Keep the HUD glued to the top instead of floating under a black bar. *)
-  dst.y := 0
+  dst.y := (outputH - dst.h) DIV 2
 END CalculateDestination;
 
 PROCEDURE Present;
@@ -182,23 +183,22 @@ BEGIN
 END RequestQuit;
 
 PROCEDURE ToggleFullscreen;
+VAR target : CARDINAL32;
 BEGIN
-  fullscreen := NOT fullscreen;
-  IF fullscreen THEN
-    IF SDL2.SDL_SetWindowFullscreen(window, VAL(CARDINAL32, SDL_WINDOW_FULLSCREEN_DESKTOP)) # 0 THEN
-      fullscreen := FALSE
-    END
-  ELSE
-    SDL2.SDL_SetWindowFullscreen(window, VAL(CARDINAL32, 0))
-  END
+  IF window = NIL THEN RETURN END;
+  IF IsFullscreen() THEN target := VAL(CARDINAL32, 0)
+  ELSE target := VAL(CARDINAL32, SDL_WINDOW_FULLSCREEN_DESKTOP)
+  END;
+  SDL2.SDL_SetWindowFullscreen(window, target)
 END ToggleFullscreen;
 
 PROCEDURE IsFullscreen() : BOOLEAN;
 BEGIN
-  RETURN fullscreen
+  IF window = NIL THEN RETURN FALSE END;
+  RETURN (SDL2.SDL_GetWindowFlags(window) MOD 2) # 0
 END IsFullscreen;
 
 BEGIN
   window := NIL; renderer := NIL; texture := NIL;
-  quitRequested := FALSE; fullscreen := FALSE
+  quitRequested := FALSE
 END Platform.

@@ -78,6 +78,21 @@ BEGIN
   RETURN VAL(INTEGER, noiseState MOD 255) - 127
 END Noise;
 
+PROCEDURE ScaleSigned(value, factor, divisor : INTEGER) : INTEGER;
+VAR sample : INTEGER;
+BEGIN
+  sample := value * factor;
+  IF sample < 0 THEN
+    RETURN -((-sample + divisor - 1) DIV divisor)
+  END;
+  RETURN sample DIV divisor
+END ScaleSigned;
+
+PROCEDURE ScaledNoise(amp, divisor : INTEGER) : INTEGER;
+BEGIN
+  RETURN ScaleSigned(Noise(), amp, divisor)
+END ScaledNoise;
+
 PROCEDURE Square(VAR phase : CARDINAL; freq : CARDINAL; amp : INTEGER) : INTEGER;
 VAR step : CARDINAL; result : INTEGER;
 BEGIN
@@ -140,10 +155,10 @@ BEGIN
       freq := 1300 - (v.age * 980 DIV v.duration);
       value := Square(v.phase, freq, amp)
   | Explosion:
-      value := Noise() * amp DIV 127;
+      value := ScaledNoise(amp, 127);
       IF (v.age MOD 320) < 160 THEN value := value + Square(v.phase, 55, amp DIV 3) END
   | Hit:
-      value := Noise() * amp DIV 180 + Square(v.phase, 180, amp DIV 2)
+      value := ScaledNoise(amp, 180) + Square(v.phase, 180, amp DIV 2)
   | Power:
       segment := (v.age * 4) DIV v.duration;
       CASE segment OF
@@ -164,7 +179,7 @@ BEGIN
       value := Square(v.phase, freq, amp DIV 2 + 8)
   | Hurt:
       freq := 220 + ((v.duration - v.age) * 180 DIV v.duration);
-      value := Square(v.phase, freq, amp) + Noise() * amp DIV 300
+      value := Square(v.phase, freq, amp) + ScaledNoise(amp, 300)
   | BossPulse:
       freq := 70 + ((v.age DIV 500) MOD 2) * 24;
       value := Square(v.phase, freq, amp)
@@ -186,7 +201,7 @@ BEGIN
   END;
   INC(menuThemePos);
   INC(menuThemeGenerated);
-  RETURN VAL(INTEGER, menuTheme[menuThemePos-1]) * 55 DIV 100
+  RETURN ScaleSigned(VAL(INTEGER, menuTheme[menuThemePos-1]), 55, 100)
 END ThemeSample;
 
 PROCEDURE PatternAt(VAR pat : ARRAY OF CARDINAL; idx : CARDINAL) : CARDINAL;
@@ -245,15 +260,15 @@ BEGIN
   IF ((step MOD 8) = 0) AND (pos < 980) THEN
     drumAmp := VAL(INTEGER, (980-pos) * (10 + intensity*2) DIV 980);
     mix := mix + Square(drumPhase, 42 + VAL(CARDINAL, (980-pos) DIV 28), drumAmp * 2);
-    mix := mix + Noise() * drumAmp DIV 12
+    mix := mix + ScaledNoise(drumAmp, 12)
   END;
   IF ((step MOD 8) = 4) AND (pos < 680) THEN
     drumAmp := VAL(INTEGER, (680-pos) * (6 + intensity) DIV 680);
-    mix := mix + Noise() * drumAmp DIV 3
+    mix := mix + ScaledNoise(drumAmp, 3)
   END;
   IF ((step MOD 8) = 6) AND (pos < 320) THEN
     drumAmp := VAL(INTEGER, (320-pos) * (4 + intensity) DIV 320);
-    mix := mix + Noise() * drumAmp DIV 5
+    mix := mix + ScaledNoise(drumAmp, 5)
   END;
 
   INC(musicClock);
@@ -305,7 +320,8 @@ BEGIN
       slot := sampleSlot[i]; pos := samplePos[i];
       IF pos >= sampleLength[slot] THEN sampleActive[i] := FALSE
       ELSE
-        mix := mix + (VAL(INTEGER, sampleData[slot][pos]) - 128) * VAL(INTEGER, sampleVolume[i]) * 96 DIV 100;
+        mix := mix + ScaleSigned((VAL(INTEGER, sampleData[slot][pos]) - 128) *
+                                 VAL(INTEGER, sampleVolume[i]), 96, 100);
         INC(samplePos[i])
       END
     END
@@ -322,7 +338,7 @@ BEGIN
       mix := mix + VoiceSample(voices[v])
     END;
     mix := mix + CustomSampleMix();
-    mix := mix * VAL(INTEGER, masterVolume) DIV 100;
+    mix := ScaleSigned(mix, VAL(INTEGER, masterVolume), 100);
     buffer[i] := ClampSample(mix)
   END
 END FillBlock;

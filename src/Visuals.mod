@@ -1,6 +1,6 @@
 IMPLEMENTATION MODULE Visuals;
 
-IMPORT FrameBuffer;
+IMPORT FrameBuffer, Input;
 
 PROCEDURE SPoint(cx, cy, dx, dy : INTEGER; colour, scale : CARDINAL);
 BEGIN
@@ -447,5 +447,175 @@ BEGIN
   FrameBuffer.HLine(x-1, x+1, y+2, c);
   FrameBuffer.PutPixel(x, y+3, c)
 END DrawHeart;
+
+PROCEDURE KeyWidth(hint : ControlHint) : INTEGER;
+BEGIN
+  CASE hint OF
+    NavigateHint : RETURN 18
+  | MoveHint : RETURN 30
+  | CancelHint : RETURN 24
+  | FullscreenHint : IF Input.IsMac() THEN RETURN 42 ELSE RETURN 24 END
+  ELSE RETURN 12
+  END
+END KeyWidth;
+
+PROCEDURE PadWidth(hint : ControlHint) : INTEGER;
+BEGIN
+  IF (hint = PauseHint) OR (hint = MenuHint) OR (hint = FullscreenHint) THEN
+    RETURN 16
+  END;
+  RETURN 12
+END PadWidth;
+
+PROCEDURE HintWidth(hint : ControlHint; label : ARRAY OF CHAR) : CARDINAL;
+VAR iconWidth : INTEGER;
+BEGIN
+  IF Input.UsingController() THEN iconWidth := PadWidth(hint)
+  ELSE iconWidth := KeyWidth(hint)
+  END;
+  RETURN VAL(CARDINAL, iconWidth + 4) + FrameBuffer.TextWidth(label, 1)
+END HintWidth;
+
+PROCEDURE DrawKeycap(x, y : INTEGER; hint : ControlHint);
+VAR w : INTEGER;
+BEGIN
+  w := KeyWidth(hint);
+  FrameBuffer.FillRect(x+1, y+2, w, 9, 2);
+  FrameBuffer.FillRect(x, y, w, 10, 3);
+  FrameBuffer.Rect(x, y, w, 10, 6);
+  FrameBuffer.HLine(x+2, x+w-3, y+2, 5);
+  CASE hint OF
+    NavigateHint :
+      FrameBuffer.Line(x+4, y+5, x+7, y+3, 8);
+      FrameBuffer.Line(x+4, y+5, x+7, y+7, 8);
+      FrameBuffer.HLine(x+5, x+8, y+5, 8);
+      FrameBuffer.Line(x+13, y+5, x+10, y+3, 8);
+      FrameBuffer.Line(x+13, y+5, x+10, y+7, 8);
+      FrameBuffer.HLine(x+9, x+12, y+5, 8)
+  | MoveHint : FrameBuffer.DrawText(x+3, y+2, "WASD", 8, 1)
+  | ConfirmHint, FireHint : FrameBuffer.DrawText(x+3, y+2, "Z", 8, 1)
+  | CancelHint : FrameBuffer.DrawText(x+3, y+2, "ESC", 8, 1)
+  | PulseHint : FrameBuffer.DrawText(x+3, y+2, "X", 8, 1)
+  | PauseHint : FrameBuffer.DrawText(x+3, y+2, "P", 8, 1)
+  | MenuHint : FrameBuffer.DrawText(x+3, y+2, "M", 8, 1)
+  | FullscreenHint :
+      IF Input.IsMac() THEN FrameBuffer.DrawText(x+3, y+2, "CMD+ENT", 8, 1)
+      ELSE FrameBuffer.DrawText(x+3, y+2, "F11", 8, 1)
+      END
+  END
+END DrawKeycap;
+
+PROCEDURE DrawFace(x, y, which : INTEGER);
+VAR colour : CARDINAL; family : Input.PadFamily;
+BEGIN
+  family := Input.ControllerFamily();
+  colour := 12;
+  IF family = Input.XboxPad THEN
+    CASE which OF
+      0 : colour := 10
+    | 1 : colour := 16
+    ELSE colour := 12
+    END
+  ELSIF family = Input.PlayStationPad THEN
+    CASE which OF
+      0 : colour := 12
+    | 1 : colour := 16
+    ELSE colour := 15
+    END
+  ELSIF family = Input.NintendoPad THEN
+    CASE which OF
+      0 : colour := 12
+    | 1 : colour := 16
+    ELSE colour := 19
+    END
+  END;
+  FrameBuffer.FillRect(x+2, y+2, 8, 8, 1);
+  FrameBuffer.HLine(x+3, x+8, y, 5);
+  FrameBuffer.HLine(x+3, x+8, y+10, 3);
+  FrameBuffer.VLine(x, y+3, y+7, 5);
+  FrameBuffer.VLine(x+11, y+3, y+7, 3);
+  FrameBuffer.PutPixel(x+1, y+2, 5); FrameBuffer.PutPixel(x+10, y+2, 5);
+  FrameBuffer.PutPixel(x+1, y+8, 3); FrameBuffer.PutPixel(x+10, y+8, 3);
+  IF family = Input.PlayStationPad THEN
+    CASE which OF
+      0 : FrameBuffer.Line(x+4, y+3, x+7, y+7, colour);
+          FrameBuffer.Line(x+7, y+3, x+4, y+7, colour)
+    | 1 : FrameBuffer.HLine(x+4, x+7, y+3, colour);
+          FrameBuffer.HLine(x+4, x+7, y+7, colour);
+          FrameBuffer.PutPixel(x+3, y+4, colour); FrameBuffer.PutPixel(x+8, y+4, colour);
+          FrameBuffer.PutPixel(x+3, y+6, colour); FrameBuffer.PutPixel(x+8, y+6, colour)
+    ELSE FrameBuffer.Rect(x+3, y+3, 6, 5, colour)
+    END
+  ELSIF family = Input.NintendoPad THEN
+    CASE which OF
+      0 : FrameBuffer.DrawText(x+3, y+2, "B", colour, 1)
+    | 1 : FrameBuffer.DrawText(x+3, y+2, "A", colour, 1)
+    ELSE FrameBuffer.DrawText(x+3, y+2, "Y", colour, 1)
+    END
+  ELSE
+    CASE which OF
+      0 : FrameBuffer.DrawText(x+3, y+2, "A", colour, 1)
+    | 1 : FrameBuffer.DrawText(x+3, y+2, "B", colour, 1)
+    ELSE FrameBuffer.DrawText(x+3, y+2, "X", colour, 1)
+    END
+  END
+END DrawFace;
+
+PROCEDURE DrawPadIcon(x, y : INTEGER; hint : ControlHint);
+BEGIN
+  CASE hint OF
+    NavigateHint :
+      FrameBuffer.FillRect(x+4, y+1, 4, 9, 3);
+      FrameBuffer.FillRect(x+1, y+4, 10, 3, 3);
+      FrameBuffer.VLine(x+5, y+2, y+8, 12);
+      FrameBuffer.HLine(x+2, x+9, y+5, 12);
+      FrameBuffer.PutPixel(x+5, y+5, 8)
+  | MoveHint :
+      FrameBuffer.Rect(x+1, y+1, 10, 10, 5);
+      FrameBuffer.FillRect(x+3, y+3, 6, 6, 3);
+      FrameBuffer.FillRect(x+5, y+4, 2, 3, 12)
+  | ConfirmHint, FireHint : DrawFace(x, y, 0)
+  | CancelHint : DrawFace(x, y, 1)
+  | PulseHint : DrawFace(x, y, 2)
+  | PauseHint, MenuHint, FullscreenHint :
+      FrameBuffer.FillRect(x+1, y+2, 15, 9, 2);
+      FrameBuffer.FillRect(x, y, 16, 10, 3);
+      FrameBuffer.Rect(x, y, 16, 10, 6);
+      IF hint = PauseHint THEN
+        FrameBuffer.VLine(x+6, y+3, y+7, 12);
+        FrameBuffer.VLine(x+9, y+3, y+7, 12)
+      ELSIF hint = MenuHint THEN
+        FrameBuffer.Line(x+4, y+5, x+7, y+3, 12);
+        FrameBuffer.Line(x+4, y+5, x+7, y+7, 12);
+        FrameBuffer.HLine(x+7, x+11, y+5, 12)
+      ELSE
+        FrameBuffer.DrawText(x+2, y+2, "R3", 12, 1)
+      END
+  END
+END DrawPadIcon;
+
+PROCEDURE DrawHint(x, y : INTEGER; hint : ControlHint;
+                   label : ARRAY OF CHAR; colour : CARDINAL);
+VAR iconWidth : INTEGER;
+BEGIN
+  IF Input.UsingController() THEN
+    DrawPadIcon(x, y, hint);
+    iconWidth := PadWidth(hint)
+  ELSE
+    DrawKeycap(x, y, hint);
+    iconWidth := KeyWidth(hint)
+  END;
+  FrameBuffer.DrawText(x+iconWidth+4, y+2, label, colour, 1)
+END DrawHint;
+
+PROCEDURE CenterHint(x, w, y : INTEGER; hint : ControlHint;
+                     label : ARRAY OF CHAR; colour : CARDINAL);
+VAR width, xx : INTEGER;
+BEGIN
+  width := VAL(INTEGER, HintWidth(hint, label));
+  xx := x + (w-width) DIV 2;
+  IF xx < x THEN xx := x END;
+  DrawHint(xx, y, hint, label, colour)
+END CenterHint;
 
 END Visuals.

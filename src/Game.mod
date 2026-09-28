@@ -90,6 +90,12 @@ BEGIN
   RETURN v
 END AbsI;
 
+PROCEDURE DivideSigned(value, divisor : INTEGER) : INTEGER;
+BEGIN
+  IF value < 0 THEN RETURN -((-value + divisor - 1) DIV divisor) END;
+  RETURN value DIV divisor
+END DivideSigned;
+
 PROCEDURE MinC(a, b : CARDINAL) : CARDINAL;
 BEGIN
   IF a < b THEN RETURN a END;
@@ -591,8 +597,8 @@ BEGIN
     IF particles[i].active THEN
       particles[i].x := particles[i].x + particles[i].vx;
       particles[i].y := particles[i].y + particles[i].vy;
-      particles[i].vx := particles[i].vx * 15 DIV 16;
-      particles[i].vy := particles[i].vy * 15 DIV 16;
+      particles[i].vx := DivideSigned(particles[i].vx * 15, 16);
+      particles[i].vy := DivideSigned(particles[i].vy * 15, 16);
       IF particles[i].life > 0 THEN DEC(particles[i].life) END;
       IF particles[i].life = 0 THEN particles[i].active := FALSE END
     END
@@ -867,14 +873,14 @@ BEGIN
     Title:
       UpdateParticles;
       IF (tick MOD 90) = 0 THEN Burst(VAL(INTEGER, 30+RNG.Range(260)), VAL(INTEGER, 20+RNG.Range(95)), 4, 1) END;
-      IF Input.Pressed(Input.Left) OR Input.Pressed(Input.Up) THEN
+      IF Input.MenuStep(Input.Left) OR Input.MenuStep(Input.Up) THEN
         CASE selectedMode OF
           ArcadeMode : selectedMode := BossRushMode
         | EndlessMode : selectedMode := ArcadeMode
         | BossRushMode : selectedMode := EndlessMode
         END;
         Audio.Play(Audio.MenuBlip)
-      ELSIF Input.Pressed(Input.Right) OR Input.Pressed(Input.Down) THEN
+      ELSIF Input.MenuStep(Input.Right) OR Input.MenuStep(Input.Down) THEN
         CASE selectedMode OF
           ArcadeMode : selectedMode := EndlessMode
         | EndlessMode : selectedMode := BossRushMode
@@ -883,27 +889,32 @@ BEGIN
         Audio.Play(Audio.MenuBlip)
       END;
       IF Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire) THEN StartGame
-      ELSIF Input.Pressed(Input.Back) THEN quitWanted := TRUE
+      ELSIF Input.Pressed(Input.Back) OR Input.Pressed(Input.Cancel) OR
+            Input.Pressed(Input.Menu) THEN quitWanted := TRUE
       END
   | Playing:
       UpdatePlaying
   | Paused:
       UpdateParticles;
-      IF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) THEN
+      IF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) OR
+         Input.Pressed(Input.Cancel) THEN
         EnterTitle; Audio.Play(Audio.MenuBlip)
-      ELSIF Input.Pressed(Input.Pause) OR Input.Pressed(Input.Start) THEN
+      ELSIF Input.Pressed(Input.Pause) OR Input.Pressed(Input.Start) OR
+            Input.Pressed(Input.Fire) THEN
         state := Playing; Audio.Play(Audio.MenuBlip)
       END
   | GameOver:
       UpdateParticles;
       IF Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire) THEN StartGame
-      ELSIF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) THEN
+      ELSIF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) OR
+            Input.Pressed(Input.Cancel) THEN
         EnterTitle; Audio.Play(Audio.MenuBlip)
       END
   | Victory:
       UpdateParticles;
       IF Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire) OR
-         Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) THEN
+         Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) OR
+         Input.Pressed(Input.Cancel) THEN
         EnterTitle; Audio.Play(Audio.MenuBlip)
       END
   END
@@ -1094,10 +1105,11 @@ END DrawBanner;
 
 PROCEDURE DrawTitle;
 VAR blink, low, lowMid, highMid, high : CARDINAL;
+    actionX, navWidth, startWidth : INTEGER;
 BEGIN
   Visuals.DrawLogo(tick);
-  Visuals.DrawPanel(14, 86, 136, 75, TRUE);
-  Visuals.DrawPanel(170, 86, 136, 75, FALSE);
+  Visuals.DrawPanel(14, 86, 136, 79, TRUE);
+  Visuals.DrawPanel(170, 86, 136, 79, FALSE);
 
   CenterTextBox(14, 136, 94, "SELECT MODE", 6, 1);
   CASE selectedMode OF
@@ -1109,19 +1121,26 @@ BEGIN
                    CenterTextBox(14, 136, 119, "8 BOSSES / NO WAVES", 5, 1)
   END;
 
-  CenterTextBox(14, 136, 130, "LEFT / RIGHT SELECT", 7, 1);
+  FrameBuffer.HLine(27, 137, 130, 3);
+  navWidth := VAL(INTEGER, Visuals.HintWidth(Visuals.NavigateHint, "MODE"));
+  startWidth := VAL(INTEGER, Visuals.HintWidth(Visuals.ConfirmHint, "START"));
+  actionX := 14 + (136 - navWidth - 10 - startWidth) DIV 2;
+  Visuals.DrawHint(actionX, 135, Visuals.NavigateHint, "MODE", 7);
   blink := (tick DIV 16) MOD 2;
   IF blink = 0 THEN
-    CenterTextBox(14, 136, 140, "Z / ENTER START", 19, 1)
+    Visuals.DrawHint(actionX + navWidth + 10, 135, Visuals.ConfirmHint, "START", 19)
   ELSE
-    CenterTextBox(14, 136, 140, "Z / ENTER START", 8, 1)
+    Visuals.DrawHint(actionX + navWidth + 10, 135, Visuals.ConfirmHint, "START", 8)
   END;
-  CenterTextBox(14, 136, 148, "WASD MOVE  X PULSE", 5, 1);
+  Visuals.CenterHint(14, 136, 150, Visuals.MoveHint, "MOVE", 5);
 
   (* Same ship in the menu and the game. No fake showroom version. *)
   Visuals.DrawPlayerPreview(238, 123, tick);
   CenterTextBox(170, 136, 94, "YOUR SHIP", 6, 1);
-  CenterTextBox(170, 136, 104, "IRONWING MK-I", 19, 1);
+  FrameBuffer.DrawText(175, 108, "IRONWING", 19, 1);
+  FrameBuffer.DrawText(188, 118, "MK-I", 6, 1);
+  Visuals.DrawHint(181, 150, Visuals.FireHint, "FIRE", 12);
+  Visuals.DrawHint(246, 150, Visuals.PulseHint, "PULSE", 19);
 
   low := Audio.ThemeMeter(0);
   lowMid := Audio.ThemeMeter(1);
@@ -1129,43 +1148,46 @@ BEGIN
   high := Audio.ThemeMeter(3);
   Visuals.DrawMusicTag(12, 169, low, lowMid, highMid, high);
   FrameBuffer.DrawText(42, 169, "ENDLESS ENDEAVOR", 12, 1);
-  FrameBuffer.DrawText(238, 169, "F11 FULLSCREEN", 4, 1)
+  Visuals.DrawHint(130, 169, Visuals.PauseHint, "PAUSE", 5);
+  Visuals.DrawHint(181, 169, Visuals.CancelHint, "QUIT", 5);
+  Visuals.DrawHint(238, 169, Visuals.FullscreenHint, "FULL", 5)
 END DrawTitle;
 
 PROCEDURE DrawPause;
 BEGIN
-  Visuals.DrawPanel(82, 54, 156, 72, TRUE);
-  CenterTextBox(82, 156, 66, "MISSION PAUSED", 12, 1);
-  CenterTextBox(82, 156, 84, "P / ENTER  RESUME", 7, 1);
-  CenterTextBox(82, 156, 96, "ESC / M     MAIN MENU", 12, 1);
-  CenterTextBox(82, 156, 108, "F11         FULLSCREEN", 5, 1)
+  Visuals.DrawPanel(82, 50, 156, 80, TRUE);
+  CenterTextBox(82, 156, 62, "MISSION PAUSED", 12, 1);
+  Visuals.CenterHint(82, 156, 82, Visuals.PauseHint, "RESUME", 8);
+  Visuals.CenterHint(82, 156, 96, Visuals.MenuHint, "MAIN MENU", 12);
+  Visuals.CenterHint(82, 156, 110, Visuals.FullscreenHint, "FULLSCREEN", 5)
 END DrawPause;
 
 PROCEDURE DrawGameOver;
 VAR buf : ARRAY [0..15] OF CHAR;
 BEGIN
-  Visuals.DrawPanel(68, 44, 184, 92, TRUE);
-  CenterTextBox(68, 184, 57, "MISSION LOST", 16, 2);
-  CenterTextBox(68, 184, 81, "FINAL SCORE", 6, 1);
-  CardText(score, buf, 6); CenterTextBox(68, 184, 93, buf, 19, 2);
-  IF score = bestScore THEN CenterTextBox(68, 184, 111, "NEW BEST!", 19, 1) END;
-  IF ((tick DIV 20) MOD 2) = 0 THEN CenterTextBox(68, 184, 122, "ENTER RETRY   ESC MENU", 12, 1) END
+  Visuals.DrawPanel(68, 39, 184, 111, TRUE);
+  CenterTextBox(68, 184, 52, "MISSION LOST", 16, 2);
+  CenterTextBox(68, 184, 77, "FINAL SCORE", 6, 1);
+  CardText(score, buf, 6); CenterTextBox(68, 184, 90, buf, 19, 2);
+  IF score = bestScore THEN CenterTextBox(68, 184, 109, "NEW BEST!", 19, 1) END;
+  Visuals.CenterHint(68, 184, 121, Visuals.ConfirmHint, "RETRY", 12);
+  Visuals.CenterHint(68, 184, 133, Visuals.CancelHint, "MAIN MENU", 7)
 END DrawGameOver;
 
 PROCEDURE DrawVictory;
 VAR buf : ARRAY [0..15] OF CHAR;
 BEGIN
-  Visuals.DrawPanel(56, 40, 208, 96, TRUE);
+  Visuals.DrawPanel(56, 36, 208, 111, TRUE);
   IF gameMode = BossRushMode THEN
-    CenterTextBox(56, 208, 53, "BOSS RUSH CLEARED", 10, 2);
-    CenterTextBox(56, 208, 78, "EIGHT ENCOUNTERS DOWN", 7, 1)
+    CenterTextBox(56, 208, 49, "BOSS RUSH CLEARED", 10, 2);
+    CenterTextBox(56, 208, 75, "EIGHT ENCOUNTERS DOWN", 7, 1)
   ELSE
-    CenterTextBox(56, 208, 53, "CAMPAIGN CLEARED", 10, 2);
-    CenterTextBox(56, 208, 78, "TWENTY SECTORS COMPLETE", 7, 1)
+    CenterTextBox(56, 208, 49, "CAMPAIGN CLEARED", 10, 2);
+    CenterTextBox(56, 208, 75, "TWENTY SECTORS COMPLETE", 7, 1)
   END;
-  CenterTextBox(56, 208, 94, "FINAL SCORE", 5, 1);
-  CardText(score, buf, 6); CenterTextBox(56, 208, 105, buf, 19, 2);
-  CenterTextBox(56, 208, 124, "ENTER / ESC  MAIN MENU", 12, 1)
+  CenterTextBox(56, 208, 91, "FINAL SCORE", 5, 1);
+  CardText(score, buf, 6); CenterTextBox(56, 208, 103, buf, 19, 2);
+  Visuals.CenterHint(56, 208, 125, Visuals.ConfirmHint, "MAIN MENU", 12)
 END DrawVictory;
 
 PROCEDURE Draw;

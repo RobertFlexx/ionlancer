@@ -15,9 +15,10 @@ cd "$ROOT"
 
 ARCH=$(uname -m 2>/dev/null || echo unknown)
 case "$ARCH" in
-  x86_64|amd64) ARCH=x86_64 ;;
+  x86_64|amd64) ARCH=x86_64; PORTABLE_INTERP=/lib64/ld-linux-x86-64.so.2 ;;
+  aarch64|arm64) ARCH=aarch64; PORTABLE_INTERP=/lib/ld-linux-aarch64.so.1 ;;
   *)
-    echo "error: portable-linux currently targets x86_64; host architecture is $ARCH" >&2
+    echo "error: portable-linux targets x86_64 and aarch64; host architecture is $ARCH" >&2
     exit 1
     ;;
 esac
@@ -50,7 +51,7 @@ done
 [ -n "$SDL_LIBFILE" ] || { echo "error: could not locate concrete SDL2 shared library" >&2; exit 1; }
 
 DISTROOT="$ROOT/dist"
-DIST="$DISTROOT/ionlancer-linux-x86_64"
+DIST="$DISTROOT/ionlancer-linux-$ARCH"
 LIBDIR="$DIST/lib"
 rm -rf "$DIST"
 mkdir -p "$LIBDIR"
@@ -67,7 +68,6 @@ for flag in $($PKG_CONFIG --libs sdl2); do
   esac
 done
 
-PORTABLE_INTERP=/lib64/ld-linux-x86-64.so.2
 PORTABLE_RPATH='-Wl,-rpath,$ORIGIN/lib'
 OUT="$DIST/ionlancer"
 
@@ -117,12 +117,18 @@ cp -a assets "$DIST/assets"
 cp README.md LICENSE "$DIST/"
 
 cat > "$DIST/run.sh" <<'RUNEOF'
+#!/bin/sh
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$HERE"
 export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-if [ -x /lib64/ld-linux-x86-64.so.2 ]; then
+case "$(uname -m 2>/dev/null || echo unknown)" in
+  x86_64|amd64) loader=/lib64/ld-linux-x86-64.so.2 ;;
+  aarch64|arm64) loader=/lib/ld-linux-aarch64.so.1 ;;
+  *) loader= ;;
+esac
+if [ -n "$loader" ] && [ -x "$loader" ]; then
   exec "$HERE/ionlancer" "$@"
 fi
 if command -v readelf >/dev/null 2>&1; then
@@ -134,7 +140,7 @@ if command -v readelf >/dev/null 2>&1; then
     fi
   fi
 fi
-echo "error: no usable x86-64 glibc ELF loader found" >&2
+echo "error: no usable glibc ELF loader found" >&2
 exit 126
 RUNEOF
 chmod +x "$DIST/run.sh"
@@ -159,10 +165,28 @@ if command -v readelf >/dev/null 2>&1; then
   }
 fi
 
+# Fail packaging if the staged game cannot enter its main loop using only the
+# libraries and assets in the archive. The launcher execs the game, so $! is
+# the process we need to stop after the headless smoke test.
+(
+  cd "$DIST" || exit 1
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy exec ./run.sh
+) >/dev/null 2>&1 &
+BUNDLE_PID=$!
+sleep 2
+if kill -0 "$BUNDLE_PID" 2>/dev/null; then
+  kill -TERM "$BUNDLE_PID" 2>/dev/null || true
+  wait "$BUNDLE_PID" 2>/dev/null || true
+else
+  wait "$BUNDLE_PID" 2>/dev/null || true
+  echo "error: the portable Linux game exited immediately instead of running" >&2
+  exit 1
+fi
+
 mkdir -p "$DISTROOT"
 (
   cd "$DISTROOT"
-  tar czf ionlancer-linux-x86_64.tar.gz ionlancer-linux-x86_64
+  tar czf "ionlancer-linux-$ARCH.tar.gz" "ionlancer-linux-$ARCH"
 )
 
-printf '%s\n' "built $DISTROOT/ionlancer-linux-x86_64.tar.gz"
+printf '%s\n' "built $DISTROOT/ionlancer-linux-$ARCH.tar.gz"

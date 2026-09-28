@@ -62,13 +62,33 @@ On macOS the native driver is `cocoa`, which is what `--auto` picks:
 ./run.sh --cocoa
 ```
 
-Controls are shown in-game. The basics are WASD/arrows to move, Z/Space to shoot, X/Shift for pulse, P to pause, M for the menu, and F11 for fullscreen.
+Controls are shown in-game. The basics are WASD/arrows to move, Z/Space to shoot,
+X/Shift for pulse, P to pause, M for the menu, and F11 for fullscreen. On macOS,
+Command+Enter and Control+Command+F also toggle fullscreen. The picture stays
+centered and keeps its pixel art aspect ratio when the window changes size.
+
+Controllers can be connected or disconnected while the game is running. The on-screen
+button prompts follow the last device used and show Xbox, PlayStation, or Nintendo
+symbols when SDL identifies the controller. Generic pads use SDL's A/B/X layout.
+
+| Action | Controller |
+| --- | --- |
+| Move and select mode | D-pad or either stick |
+| Fire and confirm | South face button or right trigger |
+| Pulse | West, east, or north face button; either bumper or left trigger |
+| Pause and resume | Start/Options/+ |
+| Return to title | Back/View/Share button; east face button in menus |
+| Toggle fullscreen | Right stick click |
+
+The title, pause, and result screens also accept the south face button to confirm
+and the east face button to go back. The east face button activates pulse during
+play.
 
 ## macOS
 
 Builds native (Apple Silicon or Intel) against whatever SDL2 `pkg-config` finds,
-and runs straight from the repository. There is nothing macOS-specific in the
-game itself, so the source is identical to the Linux build.
+and runs straight from the repository. Fullscreen can be switched with
+Command+Enter, Control+Command+F, F11, or the right stick button.
 
 X11 and Wayland are Linux backends. `--wayland` is refused on macOS, and
 `--x11` asks you to install XQuartz first rather than letting SDL fail with
@@ -88,6 +108,7 @@ Then send:
 
 ```text
 dist/ionlancer-linux-x86_64.tar.gz
+# or dist/ionlancer-linux-aarch64.tar.gz on ARM64
 ```
 
 That's the whole game, assets included.
@@ -119,6 +140,22 @@ MacPorts on the machine that opens it. Two details worth knowing:
 The build refuses to package a bundle that still points at `/opt`, `/usr/local`
 or a package manager store, and it starts the finished app headlessly to prove
 it works before it writes the archive.
+
+### Windows
+
+The release workflow builds an x86_64 Windows zip with GNU Modula-2 and SDL2
+under MSYS2 UCRT64. The zip includes the executable, assets, and required DLLs.
+The same zip is launched on a Windows ARM64 runner as a compatibility check;
+Windows ARM64 uses x64 app emulation for this build.
+
+## releases
+
+Pushing a tag matching `v*` builds native macOS archives for Apple Silicon and
+Intel, portable Linux archives for ARM64 and x86_64, and a Windows x86_64 zip.
+The workflow only publishes a GitHub release after every package passes its
+headless launch check, including the Windows ARM64 compatibility check. Each
+release includes SHA-256 checksums. Pushing to `main` or starting the workflow
+manually builds and checks the packages without publishing a release.
 
 ## license
 
