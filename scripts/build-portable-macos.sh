@@ -413,7 +413,7 @@ done
 (
   cd "$APP/Contents/Resources" || exit 1
   SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy exec "$BINARY"
-) >/dev/null 2>&1 &
+) >"$QUEUE_DIR/smoke.log" 2>&1 &
 BUNDLE_PID=$!
 
 sleep 2
@@ -430,6 +430,7 @@ if kill -0 "$BUNDLE_PID" 2>/dev/null; then
 else
   wait "$BUNDLE_PID" 2>/dev/null || true
   echo "error: the bundled game exited immediately instead of running" >&2
+  cat "$QUEUE_DIR/smoke.log" >&2
   exit 1
 fi
 
