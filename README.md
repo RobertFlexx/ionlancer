@@ -104,7 +104,7 @@ play.
 | Gauntlet | Faster waves and a boss every two waves. |
 | Time Attack | Score as much as possible in four minutes. |
 | LAN Co-op | Two pilots share eight survival waves, two bosses, and a pulse-powered revive. |
-| LAN Versus | Duel for five rounds, with a three-minute match clock. |
+| LAN Versus | Duel in a best of five match, with a three-minute match clock. |
 
 The hangar offers Ironwing (balanced), Kestrel (fast fire), Bastion (extra hull
 and shield), Specter (pulse specialist), and Comet (heavy shots). Its seven
@@ -133,7 +133,11 @@ face button switches between hosting and joining; the east face button returns
 to the title. The host controls the match simulation and sends snapshots to
 the guest. If the connection briefly drops, the game waits for the same guest
 to reconnect. Co-op pilots can spend a full pulse to revive a fallen teammate;
-versus pilots earn pulse from hits.
+versus pilots earn pulse from hits. Versus gives each ship three hull before
+modifier costs, and the first pilot to win three rounds wins the match.
+
+Run `make test-lan` to exercise two local pilots, mode switching, guest handoff,
+and the gameplay sound packets.
 
 ## macOS
 

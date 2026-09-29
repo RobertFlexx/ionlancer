@@ -718,8 +718,10 @@ BEGIN
   END;
   FrameBuffer.FillRect(x, y, w, h, 1);
   FrameBuffer.Rect(x, y, w, h, outer);
-  FrameBuffer.Rect(x+1, y+1, w-2, h-2, inner);
-  FrameBuffer.Rect(x+3, y+3, w-6, h-6, accent)
+  FrameBuffer.HLine(x+3, x+w-4, y+2, inner);
+  FrameBuffer.HLine(x+8, x+w-9, y+2, accent);
+  FrameBuffer.PutPixel(x+2, y+h-3, inner);
+  FrameBuffer.PutPixel(x+w-3, y+h-3, inner)
 END DrawPanel;
 
 PROCEDURE DrawHeart(x, y : INTEGER; filled : BOOLEAN);

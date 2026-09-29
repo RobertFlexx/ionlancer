@@ -1,0 +1,7 @@
+DEFINITION MODULE FOR "C" ProbeEnv;
+
+EXPORT UNQUALIFIED ion_probe_guest;
+
+PROCEDURE ion_probe_guest() : INTEGER;
+
+END ProbeEnv.

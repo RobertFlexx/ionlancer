@@ -1179,7 +1179,8 @@ BEGIN
         END
       END;
       IF Input.Pressed(Input.SwitchRole) THEN
-        modeIsHost := NOT modeIsHost; lanError := FALSE
+        modeIsHost := NOT modeIsHost; lanError := FALSE;
+        Audio.Play(Audio.MenuBlip)
       END;
       IF Input.Pressed(Input.Back) OR Input.Pressed(Input.Cancel) OR
          Input.Pressed(Input.Menu) THEN state := Title
@@ -1192,7 +1193,8 @@ BEGIN
           lanError := FALSE; flash := 0;
           lanMusicStage := Arena.MusicStage();
           Audio.StartTrack(selectedTrack);
-          Audio.SetIntensity(2)
+          IF selectedMode = LanCoopMode THEN Audio.SetIntensity(1)
+          ELSE Audio.SetIntensity(2) END
         ELSE lanError := TRUE END
       END
   | LanPlaying:
@@ -1202,7 +1204,10 @@ BEGIN
         Arena.Update;
         IF Arena.MusicStage() # lanMusicStage THEN
           lanMusicStage := Arena.MusicStage();
-          IF (NOT Arena.Finished()) AND
+          IF selectedMode = LanCoopMode THEN
+            Audio.SetIntensity(MinC(3, 1 + lanMusicStage DIV 3))
+          END;
+          IF Arena.Connected() AND (NOT Arena.Finished()) AND
              ((selectedMode = LanVersusMode) OR ((lanMusicStage MOD 2) = 1)) THEN
             Audio.ShuffleTrack
           END
@@ -1466,7 +1471,7 @@ PROCEDURE DrawChapterCard(y : INTEGER);
 VAR chapter : CARDINAL; buf : ARRAY [0..15] OF CHAR;
 BEGIN
   chapter := (wave-1) DIV 3;
-  Visuals.DrawPanel(42, y, 236, 54, TRUE);
+  Visuals.DrawPanel(42, y, 236, 60, TRUE);
   CardText(chapter+1, buf, 2);
   FrameBuffer.DrawText(113, y+7, "CHAPTER", 19, 1);
   FrameBuffer.DrawText(162, y+7, buf, 8, 1);
@@ -1501,7 +1506,7 @@ BEGIN
     DrawChapterCard(y-8);
     RETURN
   END;
-  Visuals.DrawPanel(84, y, 152, 34, TRUE);
+  Visuals.DrawPanel(84, y, 152, 38, TRUE);
   IF (gameMode = BossRushMode) OR
      ((gameMode = GauntletMode) AND ((wave MOD 2) = 0)) OR
      ((gameMode # GauntletMode) AND ((wave MOD 3) = 0)) THEN
@@ -1519,11 +1524,17 @@ BEGIN
   END
 END DrawBanner;
 
+PROCEDURE DrawMenuFooter;
+BEGIN
+  FrameBuffer.FillRect(0, 165, 320, 15, 1);
+  FrameBuffer.HLine(0, 319, 165, 3)
+END DrawMenuFooter;
+
 PROCEDURE DrawTitle;
 VAR blink, low, lowMid, highMid, high : CARDINAL;
 BEGIN
   Visuals.DrawLogo(tick);
-  Visuals.DrawPanel(18, 81, 284, 83, TRUE);
+  Visuals.DrawPanel(18, 81, 284, 82, TRUE);
   FrameBuffer.VLine(148, 91, 154, 4);
 
   CenterTextBox(23, 120, 91, "SELECT MODE", 6, 1);
@@ -1557,23 +1568,24 @@ BEGIN
   ShipLabel(158, 103, 19);
   ModifierLabel(158, 115, 12);
   Visuals.DrawShipPreview(selectedShip, 267, 120, tick);
-  Visuals.DrawHint(158, 138, Visuals.MoveHint, "SHIP", 5);
-  Visuals.DrawHint(158, 151, Visuals.PulseHint, "HANGAR", 12);
+  Visuals.DrawHint(158, 135, Visuals.MoveHint, "SHIP", 5);
+  Visuals.DrawHint(158, 148, Visuals.PulseHint, "HANGAR", 12);
 
+  DrawMenuFooter;
   low := Audio.ThemeMeter(0);
   lowMid := Audio.ThemeMeter(1);
   highMid := Audio.ThemeMeter(2);
   high := Audio.ThemeMeter(3);
-  Visuals.DrawMusicTag(14, 169, low, lowMid, highMid, high);
+  Visuals.DrawMusicTag(14, 167, low, lowMid, highMid, high);
   FrameBuffer.DrawText(44, 169, "ENDLESS ENDEAVOR", 12, 1);
-  Visuals.DrawHint(205, 169, Visuals.MenuHint, "HELP", 5);
-  Visuals.DrawHint(263, 169, Visuals.CancelHint, "QUIT", 5)
+  Visuals.DrawHint(205, 167, Visuals.MenuHint, "HELP", 5);
+  Visuals.DrawHint(263, 167, Visuals.CancelHint, "QUIT", 5)
 END DrawTitle;
 
 PROCEDURE DrawControls;
 BEGIN
   Visuals.DrawLogo(tick);
-  Visuals.DrawPanel(23, 72, 274, 94, TRUE);
+  Visuals.DrawPanel(23, 72, 274, 91, TRUE);
   CenterTextBox(23, 274, 80, "FLIGHT CONTROLS", 12, 1);
   FrameBuffer.HLine(34, 286, 91, 4);
   Visuals.DrawHint(37, 98, Visuals.MoveHint, "MOVE", 12);
@@ -1584,13 +1596,13 @@ BEGIN
   Visuals.DrawHint(177, 126, Visuals.MenuHint, "MENU", 12);
   Visuals.DrawHint(37, 140, Visuals.FullscreenHint, "FULL", 6);
   Visuals.DrawHint(177, 140, Visuals.CancelHint, "BACK", 6);
-  CenterTextBox(23, 274, 154, "HINTS FOLLOW THE LAST DEVICE USED", 5, 1)
+  CenterTextBox(23, 274, 152, "HINTS FOLLOW THE LAST DEVICE USED", 5, 1)
 END DrawControls;
 
 PROCEDURE DrawHangar;
 BEGIN
   Visuals.DrawLogo(tick);
-  Visuals.DrawPanel(18, 74, 284, 92, TRUE);
+  Visuals.DrawPanel(18, 74, 284, 89, TRUE);
   CenterTextBox(18, 284, 81, "HANGAR / LOADOUT", 12, 1);
   FrameBuffer.HLine(28, 291, 92, 4);
   IF hangarRow = 0 THEN FrameBuffer.Rect(27, 98, 181, 12, 12) END;
@@ -1604,71 +1616,91 @@ BEGIN
   TrackLabel(100, 136, 15);
   Visuals.DrawShipPreview(selectedShip, 258, 121, tick);
   CASE hangarRow OF
-    0 : CASE selectedShip OF
-          0 : FrameBuffer.DrawText(34, 153, "BALANCED / 3 HULL", 5, 1)
-        | 1 : FrameBuffer.DrawText(34, 153, "FAST FIRE / 2 HULL", 5, 1)
-        | 2 : FrameBuffer.DrawText(34, 153, "ARMORED / 4 HULL", 5, 1)
-        | 3 : FrameBuffer.DrawText(34, 153, "PULSE ACE / 3 HULL", 5, 1)
-        ELSE FrameBuffer.DrawText(34, 153, "HEAVY SHOTS / 2 HULL", 5, 1)
+    0 : IF selectedMode = LanVersusMode THEN
+          CASE selectedShip OF
+            0 : FrameBuffer.DrawText(34, 150, "BALANCED / 3 HULL", 5, 1)
+          | 1 : FrameBuffer.DrawText(34, 150, "FAST FIRE / 3 HULL", 5, 1)
+          | 2 : FrameBuffer.DrawText(34, 150, "SHIELD / 3 HULL", 5, 1)
+          | 3 : FrameBuffer.DrawText(34, 150, "PULSE ACE / 3 HULL", 5, 1)
+          ELSE FrameBuffer.DrawText(34, 150, "WIDE SHOTS / 3 HULL", 5, 1)
+          END
+        ELSE
+          CASE selectedShip OF
+            0 : FrameBuffer.DrawText(34, 150, "BALANCED / 3 HULL", 5, 1)
+          | 1 : FrameBuffer.DrawText(34, 150, "FAST FIRE / 2 HULL", 5, 1)
+          | 2 : FrameBuffer.DrawText(34, 150, "ARMORED / 4 HULL", 5, 1)
+          | 3 : FrameBuffer.DrawText(34, 150, "PULSE ACE / 3 HULL", 5, 1)
+          ELSE FrameBuffer.DrawText(34, 150, "HEAVY SHOTS / 2 HULL", 5, 1)
+          END
         END
   | 1 : CASE selectedModifier OF
-          0 : FrameBuffer.DrawText(34, 153, "PURE FLIGHT / NO TRADEOFF", 5, 1)
-        | 1 : FrameBuffer.DrawText(34, 153, "RAPID FIRE / LESS HULL", 5, 1)
-        | 2 : FrameBuffer.DrawText(34, 153, "SHIELD / SLOWER FLIGHT", 5, 1)
-        | 3 : FrameBuffer.DrawText(34, 153, "MORE PULSE / SLOW FIRE", 5, 1)
+          0 : FrameBuffer.DrawText(34, 150, "PURE FLIGHT / NO TRADEOFF", 5, 1)
+        | 1 : FrameBuffer.DrawText(34, 150, "RAPID FIRE / LESS HULL", 5, 1)
+        | 2 : FrameBuffer.DrawText(34, 150, "SHIELD / SLOWER FLIGHT", 5, 1)
+        | 3 : FrameBuffer.DrawText(34, 150, "MORE PULSE / SLOW FIRE", 5, 1)
         | 4 : IF selectedMode = LanVersusMode THEN
-                FrameBuffer.DrawText(34, 153, "MORE PULSE / LESS HULL", 5, 1)
+                FrameBuffer.DrawText(34, 150, "MORE PULSE / LESS HULL", 5, 1)
               ELSE
-                FrameBuffer.DrawText(34, 153, "DOUBLE SCORE / MORE FOES", 5, 1)
+                FrameBuffer.DrawText(34, 150, "DOUBLE SCORE / MORE FOES", 5, 1)
               END
-        | 5 : FrameBuffer.DrawText(34, 153, "FULL PULSE / SLOW CHARGE", 5, 1)
-        ELSE FrameBuffer.DrawText(34, 153, "MORE DAMAGE / SLOW FIRE", 5, 1)
+        | 5 : IF selectedMode = LanVersusMode THEN
+                FrameBuffer.DrawText(34, 150, "70 PULSE / SLOW CHARGE", 5, 1)
+              ELSE
+                FrameBuffer.DrawText(34, 150, "FULL PULSE / SLOW CHARGE", 5, 1)
+              END
+        ELSE IF selectedMode = LanVersusMode THEN
+               FrameBuffer.DrawText(34, 150, "WIDER SHOTS / SLOW FIRE", 5, 1)
+             ELSE
+               FrameBuffer.DrawText(34, 150, "MORE DAMAGE / SLOW FIRE", 5, 1)
+             END
         END
   ELSE IF selectedTrack = 6 THEN
-         FrameBuffer.DrawText(34, 153, "RANDOM START / ROTATE AFTER BOSSES", 5, 1)
+         FrameBuffer.DrawText(34, 150, "RANDOM START / ROTATE AFTER BOSSES", 5, 1)
        ELSE
-         FrameBuffer.DrawText(34, 153, "FIRST TRACK / THEN SHUFFLE ALL SIX", 5, 1)
+         FrameBuffer.DrawText(34, 150, "FIRST TRACK / THEN SHUFFLE ALL SIX", 5, 1)
        END
   END;
-  Visuals.DrawHint(25, 169, Visuals.MoveHint, "ROW", 7);
-  Visuals.DrawHint(114, 169, Visuals.NavigateHint, "CHANGE", 7);
-  Visuals.DrawHint(247, 169, Visuals.ConfirmHint, "DONE", 12)
+  DrawMenuFooter;
+  Visuals.DrawHint(25, 167, Visuals.MoveHint, "ROW", 7);
+  Visuals.DrawHint(114, 167, Visuals.NavigateHint, "CHANGE", 7);
+  Visuals.DrawHint(247, 167, Visuals.ConfirmHint, "DONE", 12)
 END DrawHangar;
 
 PROCEDURE DrawLanSetup;
 VAR buf : ARRAY [0..15] OF CHAR; i, x : CARDINAL;
 BEGIN
   Visuals.DrawLogo(tick);
-  Visuals.DrawPanel(28, 77, 264, 89, TRUE);
+  Visuals.DrawPanel(28, 73, 264, 90, TRUE);
   IF selectedMode = LanCoopMode THEN
-    CenterTextBox(28, 264, 84, "LAN CO-OP", 12, 2)
-  ELSE CenterTextBox(28, 264, 84, "LAN VERSUS", 12, 2)
+    CenterTextBox(28, 264, 80, "LAN CO-OP", 12, 2)
+  ELSE CenterTextBox(28, 264, 80, "LAN VERSUS", 12, 2)
   END;
   IF modeIsHost THEN
-    CenterTextBox(28, 264, 107, "HOST GAME", 19, 1);
-    CenterTextBox(28, 264, 122, "SHARE YOUR LAN IP / PORT 37177", 6, 1)
+    CenterTextBox(28, 264, 100, "HOST GAME", 19, 1);
+    CenterTextBox(28, 264, 117, "SHARE YOUR LAN IP / PORT 37177", 6, 1)
   ELSE
-    CenterTextBox(28, 264, 106, "JOIN HOST IP", 19, 1);
+    CenterTextBox(28, 264, 100, "JOIN HOST IP", 19, 1);
     FOR i := 0 TO 3 DO
       x := 71 + i*43;
       CardText(ipOctets[i], buf, 3);
-      FrameBuffer.DrawText(VAL(INTEGER, x), 125, buf, 8, 1);
-      IF i < 3 THEN FrameBuffer.DrawText(VAL(INTEGER, x+27), 125, ".", 12, 1) END;
+      FrameBuffer.DrawText(VAL(INTEGER, x), 117, buf, 8, 1);
+      IF i < 3 THEN FrameBuffer.DrawText(VAL(INTEGER, x+27), 117, ".", 12, 1) END;
       IF i = ipCursor THEN
-        FrameBuffer.HLine(VAL(INTEGER, x)-2, VAL(INTEGER, x)+19, 135, 19)
+        FrameBuffer.HLine(VAL(INTEGER, x)-2, VAL(INTEGER, x)+19, 127, 19)
       END
     END
   END;
-  Visuals.CenterHint(28, 264, 143, Visuals.PulseHint, "HOST / JOIN", 12);
+  Visuals.CenterHint(28, 264, 133, Visuals.PulseHint, "HOST / JOIN", 12);
   IF lanError THEN
-    CenterTextBox(28, 264, 155, "NETWORK UNAVAILABLE / PORT IN USE", 16, 1)
+    CenterTextBox(28, 264, 148, "NETWORK UNAVAILABLE / PORT IN USE", 16, 1)
   ELSIF modeIsHost THEN
-    CenterTextBox(28, 264, 155, "PRESS CONNECT / WAIT FOR OTHER PILOT", 5, 1)
+    CenterTextBox(28, 264, 148, "PRESS CONNECT / WAIT FOR OTHER PILOT", 5, 1)
   ELSE
-    Visuals.CenterHint(28, 264, 154, Visuals.FastHint, "UP/DOWN BY 10", 5)
+    Visuals.CenterHint(28, 264, 145, Visuals.FastHint, "UP/DOWN BY 10", 5)
   END;
-  Visuals.DrawHint(41, 169, Visuals.ConfirmHint, "CONNECT", 12);
-  Visuals.DrawHint(203, 169, Visuals.CancelHint, "BACK", 6)
+  DrawMenuFooter;
+  Visuals.DrawHint(41, 167, Visuals.ConfirmHint, "CONNECT", 12);
+  Visuals.DrawHint(203, 167, Visuals.CancelHint, "BACK", 6)
 END DrawLanSetup;
 
 PROCEDURE DrawPause;
@@ -1683,7 +1715,7 @@ END DrawPause;
 PROCEDURE DrawGameOver;
 VAR buf : ARRAY [0..15] OF CHAR;
 BEGIN
-  Visuals.DrawPanel(68, 39, 184, 111, TRUE);
+  Visuals.DrawPanel(68, 39, 184, 115, TRUE);
   CenterTextBox(68, 184, 52, "MISSION LOST", 16, 2);
   CenterTextBox(68, 184, 77, "FINAL SCORE", 6, 1);
   CardText(score, buf, 6); CenterTextBox(68, 184, 90, buf, 19, 2);
@@ -1719,8 +1751,8 @@ BEGIN
   FrameBuffer.SetPalette(12, 55 + pulse*5, 190 + pulse*5, 245);
   FrameBuffer.SetPalette(19, 255, 205 + pulse*3, 80 + pulse*2);
   chapter := 0;
-  IF (state # Title) AND (state # Controls) AND
-     (state # Hangar) AND (state # LanSetup) AND
+  IF ((state = Playing) OR (state = Paused) OR
+      (state = GameOver) OR (state = Victory)) AND
      (gameMode = CampaignMode) THEN chapter := (wave-1) DIV 3 END;
   CASE chapter OF
     0 : FrameBuffer.SetPalette(2, 18, 20, 52);

@@ -23,6 +23,8 @@ static socket_t lan_socket = INVALID_SOCKET_VALUE;
 static struct sockaddr_in lan_peer;
 static int has_peer = 0;
 static int is_host = 0;
+static uint32_t reconnect_ip = 0;
+static int reconnect_only = 0;
 
 void ion_lan_close(void) {
     if (lan_socket != INVALID_SOCKET_VALUE) {
@@ -31,6 +33,8 @@ void ion_lan_close(void) {
     }
     has_peer = 0;
     is_host = 0;
+    reconnect_ip = 0;
+    reconnect_only = 0;
 #ifdef _WIN32
     WSACleanup();
 #endif
@@ -110,15 +114,26 @@ int ion_lan_recv(void *data, int capacity) {
     } else if (is_host && result >= 4) {
         const unsigned char *bytes = (const unsigned char *)data;
         if (bytes[0] != 'I' || bytes[1] != 'L' ||
-            bytes[2] != 1 || bytes[3] != 1) return 0;
+            bytes[2] != 2 || bytes[3] != 1 || result != 10) return 0;
+        if (reconnect_only && sender.sin_addr.s_addr != reconnect_ip) return 0;
         lan_peer = sender;
         has_peer = 1;
+        reconnect_only = 0;
     } else return 0;
     return result;
 }
 
 int ion_lan_peer(void) { return has_peer; }
 
-void ion_lan_release_peer(void) {
-    if (is_host) has_peer = 0;
+void ion_lan_release_peer(int keep_address) {
+    if (is_host) {
+        if (keep_address && has_peer) {
+            reconnect_ip = lan_peer.sin_addr.s_addr;
+            reconnect_only = 1;
+        } else if (!keep_address) {
+            reconnect_ip = 0;
+            reconnect_only = 0;
+        }
+        has_peer = 0;
+    }
 }

@@ -9,7 +9,7 @@ PROCEDURE ion_lan_open(host, a, b, c, d, port : INTEGER) : INTEGER;
 PROCEDURE ion_lan_send(data : ADDRESS; length : INTEGER) : INTEGER;
 PROCEDURE ion_lan_recv(data : ADDRESS; capacity : INTEGER) : INTEGER;
 PROCEDURE ion_lan_peer() : INTEGER;
-PROCEDURE ion_lan_release_peer;
+PROCEDURE ion_lan_release_peer(keep_address : INTEGER);
 PROCEDURE ion_lan_close;
 
 END LanSocket.

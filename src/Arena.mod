@@ -8,6 +8,8 @@ CONST
   MaxFoes = 16;
   MaxHostile = 32;
   PacketCapacity = 600;
+  PacketVersion = 2;
+  SnapshotBytes = 19 + 8 + 2*10 + 9 + MaxBolts*6 + MaxFoes*6 + MaxHostile*4;
   LanPort = 37177;
 
 TYPE
@@ -38,8 +40,12 @@ VAR
   hostile : ARRAY [0..MaxHostile-1] OF Hostile;
   tx, rx : ARRAY [0..PacketCapacity-1] OF CARDINAL8;
   txPos, rxPos : CARDINAL;
-  coop, host, connected, everConnected, done : BOOLEAN;
+  coop, host, connected, everConnected, done, modeMismatch, hostCoop : BOOLEAN;
+  peerLeft : BOOLEAN;
+  soundValid, hasRemoteSeq : BOOLEAN;
   frame, lastPacket, lastSnapshot, wave, waveTimer, spawnTimer : CARDINAL;
+  lastRemoteSeq : CARDINAL;
+  soundSeq : ARRAY [0..7] OF CARDINAL;
   score, timeLeft, roundPause, winner : CARDINAL;
   rounds : ARRAY [0..1] OF CARDINAL;
   localShip, localModifier, remoteMask : CARDINAL;
@@ -106,6 +112,14 @@ BEGIN
   FOR i := 0 TO MaxHostile-1 DO hostile[i].active := FALSE END
 END ClearObjects;
 
+PROCEDURE PlaySound(effect : Audio.Effect);
+VAR index : CARDINAL;
+BEGIN
+  Audio.Play(effect);
+  index := ORD(effect);
+  soundSeq[index] := (soundSeq[index] + 1) MOD 256
+END PlaySound;
+
 PROCEDURE SetPilot(index, ship, modifier : CARDINAL);
 BEGIN
   pilots[index].ship := ship MOD 5;
@@ -113,9 +127,11 @@ BEGIN
   pilots[index].x := 94 + VAL(INTEGER, index)*132;
   pilots[index].y := 143;
   pilots[index].lives := 3;
-  IF ship = 1 THEN pilots[index].lives := 2 END;
-  IF ship = 2 THEN pilots[index].lives := 4 END;
-  IF ship = 4 THEN pilots[index].lives := 2 END;
+  IF coop THEN
+    IF ship = 1 THEN pilots[index].lives := 2 END;
+    IF ship = 2 THEN pilots[index].lives := 4 END;
+    IF ship = 4 THEN pilots[index].lives := 2 END
+  END;
   IF modifier = 1 THEN
     IF pilots[index].lives > 1 THEN DEC(pilots[index].lives) END
   END;
@@ -124,12 +140,42 @@ BEGIN
   END;
   pilots[index].shield := (ship = 2) OR (modifier = 2);
   pilots[index].reserveShield := (ship = 2) AND (modifier = 2);
-  pilots[index].invuln := 90;
+  IF coop THEN pilots[index].invuln := 90
+  ELSE pilots[index].invuln := 24 END;
   pilots[index].cooldown := 0;
   pilots[index].pulse := 0;
   IF ship = 3 THEN pilots[index].pulse := 45 END;
-  IF modifier = 5 THEN pilots[index].pulse := 100 END
+  IF modifier = 5 THEN
+    IF coop THEN pilots[index].pulse := 100
+    ELSE pilots[index].pulse := 70 END
+  END
 END SetPilot;
+
+PROCEDURE ResetMatch;
+VAR i : CARDINAL;
+BEGIN
+  frame := 0; lastPacket := 0; lastSnapshot := 0;
+  connected := FALSE; everConnected := FALSE; done := FALSE; winner := 0;
+  modeMismatch := FALSE; peerLeft := FALSE;
+  soundValid := FALSE; hasRemoteSeq := FALSE;
+  hostCoop := coop;
+  lastRemoteSeq := 0;
+  FOR i := 0 TO 7 DO soundSeq[i] := 0 END;
+  wave := 1; waveTimer := 0; spawnTimer := 60;
+  score := 0; timeLeft := 10800; roundPause := 75;
+  rounds[0] := 0; rounds[1] := 0;
+  bossActive := FALSE; bossX := 160; bossY := 35;
+  bossHealth := 0; bossMax := 0; bossKind := 0; bossPhase := 0; bossFire := 70;
+  remoteMask := 0;
+  SetPilot(0, 0, 0); SetPilot(1, 0, 0);
+  IF host THEN SetPilot(0, localShip, localModifier)
+  ELSE SetPilot(1, localShip, localModifier) END;
+  IF NOT coop THEN
+    pilots[0].x := 70; pilots[1].x := 250;
+    pilots[0].y := 102; pilots[1].y := 102
+  END;
+  ClearObjects
+END ResetMatch;
 
 PROCEDURE Start(cooperative, hosting : BOOLEAN;
                 a, b, c, d, ship, modifier : CARDINAL) : BOOLEAN;
@@ -139,23 +185,8 @@ BEGIN
   result := LanSocket.ion_lan_open(ORD(hosting), VAL(INTEGER,a), VAL(INTEGER,b),
               VAL(INTEGER,c), VAL(INTEGER,d), LanPort);
   IF result = 0 THEN RETURN FALSE END;
-  frame := 0; lastPacket := 0; lastSnapshot := 0;
-  connected := FALSE; everConnected := FALSE; done := FALSE; winner := 0;
-  wave := 1; waveTimer := 0; spawnTimer := 60;
-  score := 0; timeLeft := 10800; roundPause := 90;
-  rounds[0] := 0; rounds[1] := 0;
-  bossActive := FALSE; bossX := 160; bossY := 35;
-  bossHealth := 0; bossMax := 0; bossKind := 0; bossPhase := 0; bossFire := 70;
   localShip := ship MOD 5; localModifier := modifier MOD 7;
-  remoteMask := 0;
-  SetPilot(0, 0, 0); SetPilot(1, 0, 0);
-  IF host THEN SetPilot(0, localShip, localModifier)
-  ELSE SetPilot(1, localShip, localModifier) END;
-  IF NOT coop THEN
-    pilots[0].x := 70; pilots[1].x := 250;
-    pilots[0].y := 102; pilots[1].y := 102
-  END;
-  ClearObjects;
+  ResetMatch;
   RETURN TRUE
 END Start;
 
@@ -163,7 +194,7 @@ PROCEDURE Close;
 VAR sent : INTEGER;
 BEGIN
   txPos := 0;
-  Put8(73); Put8(76); Put8(1); Put8(3);
+  Put8(73); Put8(76); Put8(PacketVersion); Put8(3);
   sent := LanSocket.ion_lan_send(ADR(tx), VAL(INTEGER, txPos));
   sent := LanSocket.ion_lan_send(ADR(tx), VAL(INTEGER, txPos));
   LanSocket.ion_lan_close();
@@ -202,34 +233,55 @@ PROCEDURE SendInput;
 VAR sent : INTEGER;
 BEGIN
   txPos := 0;
-  Put8(73); Put8(76); Put8(1); Put8(1);
+  Put8(73); Put8(76); Put8(PacketVersion); Put8(1);
   Put16(frame MOD 65536);
-  Put8(LocalMask()); Put8(localShip); Put8(localModifier);
+  Put8(LocalMask()); Put8(localShip); Put8(localModifier); Put8(ORD(coop));
   sent := LanSocket.ion_lan_send(ADR(tx), VAL(INTEGER, txPos))
 END SendInput;
 
+PROCEDURE SendModeMismatch;
+VAR sent : INTEGER;
+BEGIN
+  txPos := 0;
+  Put8(73); Put8(76); Put8(PacketVersion); Put8(4); Put8(ORD(coop));
+  sent := LanSocket.ion_lan_send(ADR(tx), VAL(INTEGER, txPos))
+END SendModeMismatch;
+
 PROCEDURE ReadInputs;
-VAR n, count : INTEGER; ship, modifier : CARDINAL;
+VAR n, count : INTEGER; ship, modifier, seq, delta : CARDINAL;
 BEGIN
   count := 0;
   REPEAT
     n := LanSocket.ion_lan_recv(ADR(rx), PacketCapacity);
     IF (n >= 4) AND (rx[0] = 73) AND (rx[1] = 76) AND
-       (rx[2] = 1) AND (rx[3] = 3) THEN
-      connected := FALSE; remoteMask := 0;
-      LanSocket.ion_lan_release_peer
+       (rx[2] = PacketVersion) AND (rx[3] = 3) THEN
+      ResetMatch;
+      LanSocket.ion_lan_release_peer(0)
     END;
-    IF n >= 9 THEN
-      IF (rx[0] = 73) AND (rx[1] = 76) AND (rx[2] = 1) AND (rx[3] = 1) THEN
-        remoteMask := VAL(CARDINAL, rx[6]);
-        ship := VAL(CARDINAL, rx[7]) MOD 5;
-        modifier := VAL(CARDINAL, rx[8]) MOD 7;
-        IF NOT everConnected THEN
-          SetPilot(1, ship, modifier);
-          IF NOT coop THEN pilots[1].x := 250; pilots[1].y := 102 END
-        END;
-        connected := TRUE; everConnected := TRUE;
-        lastPacket := frame
+    IF n = 10 THEN
+      IF (rx[0] = 73) AND (rx[1] = 76) AND
+         (rx[2] = PacketVersion) AND (rx[3] = 1) THEN
+        IF (rx[9] # 0) # coop THEN
+          SendModeMismatch;
+          ResetMatch;
+          LanSocket.ion_lan_release_peer(0)
+        ELSE
+          seq := VAL(CARDINAL, rx[4]) + VAL(CARDINAL, rx[5])*256;
+          delta := (seq + 65536 - lastRemoteSeq) MOD 65536;
+          IF (NOT hasRemoteSeq) OR ((delta > 0) AND (delta < 32768)) THEN
+            remoteMask := VAL(CARDINAL, rx[6]);
+            lastRemoteSeq := seq; hasRemoteSeq := TRUE
+          END;
+          ship := VAL(CARDINAL, rx[7]) MOD 5;
+          modifier := VAL(CARDINAL, rx[8]) MOD 7;
+          IF NOT everConnected THEN
+            SetPilot(1, ship, modifier);
+            IF NOT coop THEN pilots[1].x := 250; pilots[1].y := 102 END;
+            PlaySound(Audio.StartJingle)
+          END;
+          connected := TRUE; everConnected := TRUE;
+          lastPacket := frame
+        END
       END
     END;
     INC(count)
@@ -240,12 +292,13 @@ PROCEDURE SendSnapshot;
 VAR i, sent : INTEGER;
 BEGIN
   txPos := 0;
-  Put8(73); Put8(76); Put8(1); Put8(2);
+  Put8(73); Put8(76); Put8(PacketVersion); Put8(2);
   Put16(frame MOD 65536);
   Put8(ORD(coop)); Put8(ORD(done)); Put8(winner); Put8(wave MOD 256);
   Put16(score MOD 65536); Put16(score DIV 65536);
   Put16(timeLeft MOD 65536);
   Put8(rounds[0]); Put8(rounds[1]); Put8(roundPause);
+  FOR i := 0 TO 7 DO Put8(soundSeq[i]) END;
   FOR i := 0 TO 1 DO
     PutX(pilots[i].x); PutY(pilots[i].y);
     Put8(pilots[i].lives); Put8(pilots[i].invuln);
@@ -270,49 +323,74 @@ BEGIN
 END SendSnapshot;
 
 PROCEDURE ReadSnapshot;
-VAR n, count, i : INTEGER; seq, delta, scoreLo, scoreHi : CARDINAL;
+VAR n, count, i : INTEGER; seq, delta, scoreLo, scoreHi, nextSound : CARDINAL;
+    played : ARRAY [0..7] OF BOOLEAN;
 BEGIN
   count := 0;
+  FOR i := 0 TO 7 DO played[i] := FALSE END;
   REPEAT
     n := LanSocket.ion_lan_recv(ADR(rx), PacketCapacity);
     IF (n >= 4) AND (rx[0] = 73) AND (rx[1] = 76) AND
-       (rx[2] = 1) AND (rx[3] = 3) THEN connected := FALSE END;
-    IF n >= 464 THEN
-      IF (rx[0] = 73) AND (rx[1] = 76) AND (rx[2] = 1) AND (rx[3] = 2) THEN
-        rxPos := 4;
-        seq := Get16();
-        delta := (seq + 65536 - lastSnapshot) MOD 65536;
-        IF (NOT connected) OR ((delta > 0) AND (delta < 32768)) THEN
-          lastSnapshot := seq;
-          connected := TRUE; everConnected := TRUE; lastPacket := frame;
-          coop := Get8() # 0; done := Get8() # 0;
-          winner := Get8(); wave := Get8();
-          scoreLo := Get16(); scoreHi := Get16();
-          score := scoreLo + scoreHi*65536;
-          timeLeft := Get16();
-          rounds[0] := Get8(); rounds[1] := Get8(); roundPause := Get8();
-          FOR i := 0 TO 1 DO
-            pilots[i].x := GetX(); pilots[i].y := GetY();
-            pilots[i].lives := Get8(); pilots[i].invuln := Get8();
-            pilots[i].pulse := Get8(); pilots[i].ship := Get8();
-            pilots[i].modifier := Get8(); pilots[i].shield := Get8() # 0;
-            pilots[i].reserveShield := Get8() # 0
-          END;
-          bossActive := Get8() # 0; bossX := GetX(); bossY := GetY();
-          bossHealth := Get16(); bossMax := Get16(); bossKind := Get8();
-          FOR i := 0 TO MaxBolts-1 DO
-            bolts[i].active := Get8() # 0;
-            bolts[i].x := GetX(); bolts[i].y := GetY();
-            bolts[i].owner := Get8(); bolts[i].power := Get8()
-          END;
-          FOR i := 0 TO MaxFoes-1 DO
-            foes[i].active := Get8() # 0; foes[i].kind := Get8();
-            foes[i].x := GetX(); foes[i].y := GetY();
-            foes[i].health := Get8()
-          END;
-          FOR i := 0 TO MaxHostile-1 DO
-            hostile[i].active := Get8() # 0;
-            hostile[i].x := GetX(); hostile[i].y := GetY()
+       (rx[2] = PacketVersion) AND (rx[3] = 3) THEN
+      connected := FALSE; soundValid := FALSE; peerLeft := TRUE
+    END;
+    IF (n = 5) AND (rx[0] = 73) AND (rx[1] = 76) AND
+       (rx[2] = PacketVersion) AND (rx[3] = 4) THEN
+      modeMismatch := TRUE; hostCoop := rx[4] # 0;
+      connected := FALSE; soundValid := FALSE
+    END;
+    IF (n = SnapshotBytes) AND (NOT peerLeft) THEN
+      IF (rx[0] = 73) AND (rx[1] = 76) AND
+         (rx[2] = PacketVersion) AND (rx[3] = 2) THEN
+        IF (rx[6] # 0) # coop THEN
+          modeMismatch := TRUE; hostCoop := rx[6] # 0
+        ELSE
+          rxPos := 4;
+          seq := Get16();
+          delta := (seq + 65536 - lastSnapshot) MOD 65536;
+          IF (NOT connected) OR ((delta > 0) AND (delta < 32768)) THEN
+            lastSnapshot := seq;
+            connected := TRUE; everConnected := TRUE; lastPacket := frame;
+            modeMismatch := FALSE;
+            coop := Get8() # 0; done := Get8() # 0;
+            winner := Get8(); wave := Get8();
+            scoreLo := Get16(); scoreHi := Get16();
+            score := scoreLo + scoreHi*65536;
+            timeLeft := Get16();
+            rounds[0] := Get8(); rounds[1] := Get8(); roundPause := Get8();
+            FOR i := 0 TO 7 DO
+              nextSound := Get8();
+              IF soundValid AND (nextSound # soundSeq[i]) AND NOT played[i] THEN
+                Audio.Play(VAL(Audio.Effect, i)); played[i] := TRUE
+              END;
+              soundSeq[i] := nextSound
+            END;
+            IF NOT soundValid THEN
+              Audio.Play(Audio.StartJingle); soundValid := TRUE
+            END;
+            FOR i := 0 TO 1 DO
+              pilots[i].x := GetX(); pilots[i].y := GetY();
+              pilots[i].lives := Get8(); pilots[i].invuln := Get8();
+              pilots[i].pulse := Get8(); pilots[i].ship := Get8();
+              pilots[i].modifier := Get8(); pilots[i].shield := Get8() # 0;
+              pilots[i].reserveShield := Get8() # 0
+            END;
+            bossActive := Get8() # 0; bossX := GetX(); bossY := GetY();
+            bossHealth := Get16(); bossMax := Get16(); bossKind := Get8();
+            FOR i := 0 TO MaxBolts-1 DO
+              bolts[i].active := Get8() # 0;
+              bolts[i].x := GetX(); bolts[i].y := GetY();
+              bolts[i].owner := Get8(); bolts[i].power := Get8()
+            END;
+            FOR i := 0 TO MaxFoes-1 DO
+              foes[i].active := Get8() # 0; foes[i].kind := Get8();
+              foes[i].x := GetX(); foes[i].y := GetY();
+              foes[i].health := Get8()
+            END;
+            FOR i := 0 TO MaxHostile-1 DO
+              hostile[i].active := Get8() # 0;
+              hostile[i].x := GetX(); hostile[i].y := GetY()
+            END
           END
         END
       END
@@ -331,25 +409,25 @@ BEGIN
       bolts[i].owner := owner;
       bolts[i].x := pilots[owner].x;
       bolts[i].y := pilots[owner].y-9;
-      bolts[i].vx := 0; bolts[i].vy := -8;
+      bolts[i].vx := 0; bolts[i].vy := -6;
       IF NOT coop THEN
         bolts[i].x := pilots[owner].x + 10 - VAL(INTEGER, owner)*20;
         bolts[i].y := pilots[owner].y;
-        bolts[i].vx := 8 - VAL(INTEGER, owner)*16;
+        bolts[i].vx := 6 - VAL(INTEGER, owner)*12;
         bolts[i].vy := 0
       END;
       power := 1;
       IF pilots[owner].ship = 4 THEN INC(power) END;
       IF pilots[owner].modifier = 6 THEN INC(power) END;
       bolts[i].power := power;
-      cooldown := 10;
-      IF pilots[owner].ship = 1 THEN cooldown := 7 END;
-      IF pilots[owner].ship = 2 THEN cooldown := 12 END;
-      IF pilots[owner].modifier = 1 THEN cooldown := 5 END;
+      cooldown := 11;
+      IF pilots[owner].ship = 1 THEN cooldown := 8 END;
+      IF pilots[owner].ship = 2 THEN cooldown := 13 END;
+      IF pilots[owner].modifier = 1 THEN cooldown := 6 END;
       IF pilots[owner].modifier = 3 THEN INC(cooldown) END;
       IF pilots[owner].modifier = 6 THEN INC(cooldown, 3) END;
       pilots[owner].cooldown := cooldown;
-      Audio.Play(Audio.Laser);
+      PlaySound(Audio.Laser);
       RETURN
     END
   END
@@ -405,7 +483,7 @@ BEGIN
     pilots[i].y := 102
   END;
   ClearObjects;
-  roundPause := 90
+  roundPause := 75
 END ResetRound;
 
 PROCEDURE DamagePilot(index : CARDINAL);
@@ -415,19 +493,19 @@ BEGIN
     IF pilots[index].reserveShield THEN pilots[index].reserveShield := FALSE
     ELSE pilots[index].shield := FALSE END;
     pilots[index].invuln := 60;
-    Audio.Play(Audio.Hurt);
+    PlaySound(Audio.Hurt);
     RETURN
   END;
   DEC(pilots[index].lives);
   pilots[index].invuln := 95;
-  Audio.Play(Audio.Hurt);
+  PlaySound(Audio.Hurt);
   IF pilots[index].lives = 0 THEN
     IF coop THEN
       IF pilots[1-index].lives = 0 THEN done := TRUE; winner := 0 END
     ELSE
       INC(rounds[1-index]);
-      Audio.Play(Audio.Explosion);
-      IF rounds[1-index] >= 5 THEN
+      PlaySound(Audio.Explosion);
+      IF rounds[1-index] >= 3 THEN
         done := TRUE; winner := 2-index
       ELSE ResetRound
       END
@@ -440,7 +518,7 @@ VAR i : CARDINAL;
 BEGIN
   IF pilots[index].pulse < 100 THEN RETURN END;
   pilots[index].pulse := 0;
-  Audio.Play(Audio.Power);
+  PlaySound(Audio.Power);
   IF coop THEN
     FOR i := 0 TO MaxHostile-1 DO hostile[i].active := FALSE END;
     FOR i := 0 TO MaxFoes-1 DO
@@ -473,9 +551,8 @@ PROCEDURE MovePilot(index, mask : CARDINAL);
 VAR speed : INTEGER;
 BEGIN
   IF pilots[index].lives = 0 THEN RETURN END;
-  speed := 3;
-  IF (pilots[index].ship = 1) OR (pilots[index].ship = 3) THEN speed := 4 END;
-  IF pilots[index].ship = 2 THEN speed := 2 END;
+  speed := 2;
+  IF (pilots[index].ship = 1) OR (pilots[index].ship = 3) THEN speed := 3 END;
   IF pilots[index].modifier = 2 THEN speed := 2 END;
   IF Has(mask, 1) THEN DEC(pilots[index].x, speed) END;
   IF Has(mask, 2) THEN INC(pilots[index].x, speed) END;
@@ -508,7 +585,7 @@ BEGIN
   IF pilots[owner].pulse + gain > 100 THEN pilots[owner].pulse := 100
   ELSE INC(pilots[owner].pulse, gain)
   END;
-  Audio.Play(Audio.Explosion)
+  PlaySound(Audio.Explosion)
 END KillFoe;
 
 PROCEDURE UpdateBolts;
@@ -539,13 +616,13 @@ BEGIN
           bolts[i].active := FALSE;
           IF bossHealth > bolts[i].power THEN DEC(bossHealth, bolts[i].power)
           ELSE bossHealth := 0 END;
-          Audio.Play(Audio.Hit)
+          PlaySound(Audio.Hit)
         END
       ELSE
         other := 1-bolts[i].owner;
         IF (pilots[other].lives > 0) AND
-           (AbsI(bolts[i].x-pilots[other].x) < 10) AND
-           (AbsI(bolts[i].y-pilots[other].y) < 9) THEN
+             (AbsI(bolts[i].x-pilots[other].x) < 10) AND
+             (AbsI(bolts[i].y-pilots[other].y) < 7 + VAL(INTEGER, bolts[i].power)*2) THEN
           bolts[i].active := FALSE;
           IF pilots[other].invuln = 0 THEN
             gain := 15;
@@ -648,7 +725,7 @@ BEGIN
   IF bossHealth = 0 THEN
     bossActive := FALSE;
     score := score + 5000;
-    Audio.Play(Audio.Explosion);
+    PlaySound(Audio.Explosion);
     IF wave >= 8 THEN done := TRUE; winner := 3
     ELSE INC(wave); waveTimer := 0; spawnTimer := 60
     END
@@ -665,7 +742,7 @@ BEGIN
       bossKind := (wave DIV 4 + 4) MOD 8;
       bossX := 160; bossY := 34; bossPhase := 0; bossFire := 70;
       bossMax := 55 + wave*12; bossHealth := bossMax;
-      Audio.Play(Audio.BossPulse)
+      PlaySound(Audio.BossPulse)
     END;
     RETURN
   END;
@@ -724,19 +801,23 @@ BEGIN
   INC(frame);
   IF host THEN
     ReadInputs;
-    IF connected AND (frame-lastPacket > 600) THEN
+    IF connected AND (frame-lastPacket > 12) THEN remoteMask := 0 END;
+    IF connected AND (frame-lastPacket > 240) THEN
       connected := FALSE;
       remoteMask := 0;
-      LanSocket.ion_lan_release_peer
+      hasRemoteSeq := FALSE;
+      LanSocket.ion_lan_release_peer(1)
     END;
     IF connected THEN
       UpdateWorld;
       SendSnapshot
     END
   ELSE
-    SendInput;
+    IF NOT peerLeft THEN SendInput END;
     ReadSnapshot;
-    IF connected AND (frame-lastPacket > 600) THEN connected := FALSE END
+    IF connected AND (frame-lastPacket > 240) THEN
+      connected := FALSE; soundValid := FALSE
+    END
   END
 END Update;
 
@@ -762,28 +843,42 @@ BEGIN
 END Center;
 
 PROCEDURE DrawHud;
-VAR buf : ARRAY [0..15] OF CHAR; i : CARDINAL;
+VAR buf : ARRAY [0..15] OF CHAR; i, hearts : CARDINAL;
 BEGIN
   FrameBuffer.FillRect(0, 0, 320, 17, 1);
   FrameBuffer.HLine(0, 319, 17, 4);
   IF host THEN
-    FrameBuffer.DrawText(5, 4, "YOU", 12, 1);
-    FrameBuffer.DrawText(226, 4, "GUEST", 15, 1)
+    FrameBuffer.DrawText(5, 4, "YOU HOST", 12, 1);
+    FrameBuffer.HLine(5, 39, 13, 12);
+    FrameBuffer.DrawText(229, 4, "GUEST", 15, 1)
   ELSE
     FrameBuffer.DrawText(5, 4, "HOST", 12, 1);
-    FrameBuffer.DrawText(226, 4, "YOU", 15, 1)
+    FrameBuffer.DrawText(229, 4, "YOU GUEST", 15, 1);
+    FrameBuffer.HLine(229, 272, 13, 15)
   END;
   IF coop THEN
     Digits(score, buf, 6);
-    FrameBuffer.DrawText(117, 4, buf, 19, 1)
+    FrameBuffer.DrawText(120, 4, "TEAM", 6, 1);
+    FrameBuffer.DrawText(148, 4, buf, 19, 1);
+    hearts := 4
   ELSE
-    Digits(rounds[0], buf, 1); FrameBuffer.DrawText(75, 4, buf, 12, 1);
-    Digits(timeLeft DIV 60, buf, 3); FrameBuffer.DrawText(150, 4, buf, 19, 1);
-    Digits(rounds[1], buf, 1); FrameBuffer.DrawText(204, 4, buf, 15, 1)
+    Digits(rounds[0], buf, 1); FrameBuffer.DrawText(102, 4, buf, 12, 1);
+    FrameBuffer.DrawText(132, 4, "TIME", 6, 1);
+    Digits(timeLeft DIV 3600, buf, 1);
+    FrameBuffer.DrawText(156, 4, buf, 19, 1);
+    FrameBuffer.DrawText(161, 4, ":", 19, 1);
+    Digits((timeLeft DIV 60) MOD 60, buf, 2);
+    FrameBuffer.DrawText(166, 4, buf, 19, 1);
+    Digits(rounds[1], buf, 1); FrameBuffer.DrawText(213, 4, buf, 15, 1);
+    hearts := 3
   END;
-  FOR i := 0 TO 3 DO
-    Visuals.DrawHeart(43+VAL(INTEGER,i*8), 6, i < pilots[0].lives);
-    Visuals.DrawHeart(270+VAL(INTEGER,i*8), 6, i < pilots[1].lives)
+  FOR i := 0 TO hearts-1 DO
+    IF connected OR host THEN
+      Visuals.DrawHeart(55+VAL(INTEGER,i*8), 6, i < pilots[0].lives)
+    END;
+    IF connected OR (NOT host) THEN
+      Visuals.DrawHeart(283+VAL(INTEGER,i*8), 6, i < pilots[1].lives)
+    END
   END
 END DrawHud;
 
@@ -831,7 +926,8 @@ BEGIN
     END
   END;
   FOR i := 0 TO 1 DO
-    IF (pilots[i].lives > 0) AND
+    IF (connected OR (host AND (i = 0)) OR ((NOT host) AND (i = 1))) AND
+       (pilots[i].lives > 0) AND
        ((pilots[i].invuln = 0) OR ((frame MOD 6) < 3)) THEN
       Visuals.DrawShip(pilots[i].ship, pilots[i].x, pilots[i].y,
                        frame, 0, pilots[i].shield);
@@ -839,7 +935,8 @@ BEGIN
         FrameBuffer.Rect(pilots[i].x-15, pilots[i].y-16, 31, 32, 11)
       END
     END;
-    IF pilots[i].lives > 0 THEN
+    IF (connected OR (host AND (i = 0)) OR ((NOT host) AND (i = 1))) AND
+       (pilots[i].lives > 0) THEN
       FrameBuffer.Rect(pilots[i].x-10, pilots[i].y+13, 21, 3, 4);
       FrameBuffer.FillRect(pilots[i].x-9, pilots[i].y+14,
                            VAL(INTEGER,pilots[i].pulse*19 DIV 100), 1,
@@ -851,7 +948,18 @@ END DrawWorld;
 PROCEDURE DrawOverlay;
 VAR buf : ARRAY [0..15] OF CHAR;
 BEGIN
-  IF NOT connected THEN
+  IF peerLeft THEN
+    Visuals.DrawPanel(54, 61, 212, 62, TRUE);
+    Center(73, "HOST LEFT MATCH", 16, 1);
+    Center(88, "RETURN TO TITLE", 6, 1);
+    Visuals.CenterHint(54, 212, 103, Visuals.MenuHint, "MAIN MENU", 12)
+  ELSIF modeMismatch THEN
+    Visuals.DrawPanel(54, 61, 212, 62, TRUE);
+    Center(72, "LAN MODE DOES NOT MATCH", 16, 1);
+    IF hostCoop THEN Center(87, "HOST IS IN CO-OP", 6, 1)
+    ELSE Center(87, "HOST IS IN VERSUS", 6, 1) END;
+    Visuals.CenterHint(54, 212, 103, Visuals.MenuHint, "MAIN MENU", 12)
+  ELSIF NOT connected THEN
     Visuals.DrawPanel(54, 61, 212, 62, TRUE);
     IF everConnected THEN Center(73, "LINK LOST / REJOINING", 16, 1)
     ELSIF host THEN Center(73, "WAITING FOR PILOT", 19, 1)
@@ -859,7 +967,7 @@ BEGIN
     Center(88, "UDP PORT 37177", 6, 1);
     Visuals.CenterHint(54, 212, 103, Visuals.MenuHint, "MAIN MENU", 12)
   ELSIF done THEN
-    Visuals.DrawPanel(43, 53, 234, 83, TRUE);
+    Visuals.DrawPanel(43, 53, 234, 87, TRUE);
     IF coop THEN
       IF winner = 3 THEN Center(64, "TEAM VICTORY", 10, 2)
       ELSE Center(64, "TEAM LOST", 16, 2) END;
@@ -874,7 +982,7 @@ BEGIN
       FrameBuffer.DrawText(151, 94, ":", 7, 2);
       Digits(rounds[1], buf, 1); FrameBuffer.DrawText(169, 94, buf, 15, 2)
     END;
-    Visuals.CenterHint(43, 234, 120, Visuals.ConfirmHint, "MAIN MENU", 12)
+    Visuals.CenterHint(43, 234, 117, Visuals.ConfirmHint, "MAIN MENU", 12)
   END
 END DrawOverlay;
 
