@@ -6,6 +6,7 @@ PROCEDURE Update;
 PROCEDURE Draw;
 PROCEDURE Finished() : BOOLEAN;
 PROCEDURE Connected() : BOOLEAN;
+PROCEDURE MusicStage() : CARDINAL;
 PROCEDURE Close;
 
 END Arena.

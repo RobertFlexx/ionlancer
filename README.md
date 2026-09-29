@@ -109,8 +109,10 @@ play.
 The hangar offers Ironwing (balanced), Kestrel (fast fire), Bastion (extra hull
 and shield), Specter (pulse specialist), and Comet (heavy shots). Its seven
 modifiers trade power for a cost: Standard, Overdrive, Fortify, Siphon, Bounty,
-Nova, and Focus Lens. You can also choose Ion Drift, Neon Chase, Aster Bloom,
-Event Horizon, Afterburn, or the official Endless Endeavor soundtrack for your run.
+Nova, and Focus Lens. Gameplay shuffles Ion Drift, Neon Chase, Aster Bloom,
+Event Horizon, Afterburn, and the official Endless Endeavor soundtrack. The
+hangar can choose the opening track; music then rotates after boss fights.
+LAN matches rotate tracks between waves or rounds.
 
 Enemy drops now include shields, rapid fire, triple shots, repairs, pulse
 energy, score caches, and brief invulnerability. The campaign's chapter cards

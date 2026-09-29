@@ -61,25 +61,37 @@ BEGIN
 END GetPixel;
 
 PROCEDURE HLine(x1, x2, y : INTEGER; colour : CARDINAL);
-VAR x, a, b : INTEGER;
+VAR x, a, b, offset : INTEGER; c : CARDINAL8;
 BEGIN
   IF (y < 0) OR (y >= Height) THEN RETURN END;
   a := x1; b := x2;
   IF a > b THEN x := a; a := b; b := x END;
+  IF (a >= Width) OR (b < 0) THEN RETURN END;
   IF a < 0 THEN a := 0 END;
   IF b >= Width THEN b := Width-1 END;
-  FOR x := a TO b DO PutPixel(x, y, colour) END
+  c := ClampByte(VAL(INTEGER, colour));
+  offset := y*Width+a;
+  FOR x := a TO b DO
+    pixels[VAL(CARDINAL, offset)] := c;
+    INC(offset)
+  END
 END HLine;
 
 PROCEDURE VLine(x, y1, y2 : INTEGER; colour : CARDINAL);
-VAR y, a, b : INTEGER;
+VAR y, a, b, offset : INTEGER; c : CARDINAL8;
 BEGIN
   IF (x < 0) OR (x >= Width) THEN RETURN END;
   a := y1; b := y2;
   IF a > b THEN y := a; a := b; b := y END;
+  IF (a >= Height) OR (b < 0) THEN RETURN END;
   IF a < 0 THEN a := 0 END;
   IF b >= Height THEN b := Height-1 END;
-  FOR y := a TO b DO PutPixel(x, y, colour) END
+  c := ClampByte(VAL(INTEGER, colour));
+  offset := a*Width+x;
+  FOR y := a TO b DO
+    pixels[VAL(CARDINAL, offset)] := c;
+    INC(offset, Width)
+  END
 END VLine;
 
 PROCEDURE FillRect(x, y, w, h : INTEGER; colour : CARDINAL);

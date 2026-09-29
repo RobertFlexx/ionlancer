@@ -176,6 +176,12 @@ BEGIN RETURN done END Finished;
 PROCEDURE Connected() : BOOLEAN;
 BEGIN RETURN connected END Connected;
 
+PROCEDURE MusicStage() : CARDINAL;
+BEGIN
+  IF coop THEN RETURN wave END;
+  RETURN rounds[0]+rounds[1]+1
+END MusicStage;
+
 PROCEDURE LocalMask() : CARDINAL;
 VAR mask : CARDINAL;
 BEGIN

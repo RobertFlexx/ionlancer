@@ -17,6 +17,7 @@ CONST
   ThemeVisSamplesPerFrame = 735;
   MaxThemeVisBytes = 40000;
   PatternLen = 32;
+  MusicFadeSamples = 11025;
 
 TYPE
   Voice = RECORD
@@ -45,6 +46,10 @@ VAR
   sampleSlot, samplePos, sampleVolume : ARRAY [0..MaxSampleVoices-1] OF CARDINAL;
   musicMode : MusicMode;
   soundtrack : CARDINAL;
+  trackStepSamples, cachedStep, cachedPhrase, musicSeed : CARDINAL;
+  musicFadeRemaining : CARDINAL;
+  cachedLead, cachedBass, cachedArp, cachedPad : CARDINAL;
+  patternValid : BOOLEAN;
   menuTheme : ARRAY [0..MaxThemeSamples-1] OF INTEGER16;
   menuThemeLength, menuThemePos, menuThemeGenerated : CARDINAL;
   menuThemeLoaded : BOOLEAN;
@@ -236,57 +241,52 @@ END PatternAt;
 
 PROCEDURE SynthMusicSample() : INTEGER;
 VAR
-  step, pos, phrase, stepSamples : CARDINAL;
-  lf, bf, af, pf : CARDINAL;
+  step, pos, phrase : CARDINAL;
   mix, drumAmp, leadAmp : INTEGER;
 BEGIN
-  CASE soundtrack OF
-    1 : stepSamples := 3308
-  | 2 : stepSamples := 5513
-  | 3 : stepSamples := 4410
-  | 4 : stepSamples := 3675
-  ELSE stepSamples := 4009
-  END;
-  step := (musicClock DIV stepSamples) MOD PatternLen;
-  pos := musicClock MOD stepSamples;
-  phrase := (musicClock DIV (stepSamples * PatternLen)) MOD 4;
+  step := (musicClock DIV trackStepSamples) MOD PatternLen;
+  pos := musicClock MOD trackStepSamples;
+  phrase := (musicClock DIV (trackStepSamples * PatternLen)) MOD 4;
 
-  CASE phrase OF
-    0:
-      lf := PatternAt(leadPattern, step);
-      bf := PatternAt(bassPattern, step);
-      af := PatternAt(arpPattern, step);
-      pf := PatternAt(padPattern, step)
-  | 1:
-      lf := PatternAt(leadPattern, step + 8);
-      bf := PatternAt(bassPattern, step + 8);
-      af := PatternAt(arpPattern, step + 4);
-      pf := PatternAt(padPattern, step + 8)
-  | 2:
-      lf := PatternAt(leadPattern, step + 16);
-      bf := PatternAt(bassPattern, step + 16);
-      af := PatternAt(arpPattern, step + 8);
-      pf := PatternAt(padPattern, step + 16)
-  ELSE
-      lf := PatternAt(leadPattern, step + 24);
-      bf := PatternAt(bassPattern, step + 24);
-      af := PatternAt(arpPattern, step + 12);
-      pf := PatternAt(padPattern, step + 24)
+  IF (NOT patternValid) OR (step # cachedStep) OR (phrase # cachedPhrase) THEN
+    cachedStep := step; cachedPhrase := phrase; patternValid := TRUE;
+    CASE phrase OF
+      0:
+        cachedLead := PatternAt(leadPattern, step);
+        cachedBass := PatternAt(bassPattern, step);
+        cachedArp := PatternAt(arpPattern, step);
+        cachedPad := PatternAt(padPattern, step)
+    | 1:
+        cachedLead := PatternAt(leadPattern, step + 8);
+        cachedBass := PatternAt(bassPattern, step + 8);
+        cachedArp := PatternAt(arpPattern, step + 4);
+        cachedPad := PatternAt(padPattern, step + 8)
+    | 2:
+        cachedLead := PatternAt(leadPattern, step + 16);
+        cachedBass := PatternAt(bassPattern, step + 16);
+        cachedArp := PatternAt(arpPattern, step + 8);
+        cachedPad := PatternAt(padPattern, step + 16)
+    ELSE
+        cachedLead := PatternAt(leadPattern, step + 24);
+        cachedBass := PatternAt(bassPattern, step + 24);
+        cachedArp := PatternAt(arpPattern, step + 12);
+        cachedPad := PatternAt(padPattern, step + 24)
+    END
   END;
 
-  mix := Triangle(bassPhase, bf, 13 + VAL(INTEGER, intensity));
-  mix := mix + Triangle(padPhase, pf, 3 + VAL(INTEGER, intensity DIV 2));
+  mix := Triangle(bassPhase, cachedBass, 13 + VAL(INTEGER, intensity));
+  mix := mix + Triangle(padPhase, cachedPad, 3 + VAL(INTEGER, intensity DIV 2));
 
   IF intensity >= 1 THEN
     leadAmp := 7 + VAL(INTEGER, intensity);
-    IF pos > stepSamples*3 DIV 4 THEN leadAmp := leadAmp DIV 3 END;
-    mix := mix + Pulse(leadPhase, lf, leadAmp)
+    IF pos > trackStepSamples*3 DIV 4 THEN leadAmp := leadAmp DIV 3 END;
+    mix := mix + Pulse(leadPhase, cachedLead, leadAmp)
   END;
   IF intensity >= 2 THEN
-    mix := mix + Square(arpPhase, af, 3 + VAL(INTEGER, intensity DIV 2))
+    mix := mix + Square(arpPhase, cachedArp, 3 + VAL(INTEGER, intensity DIV 2))
   END;
   IF (intensity >= 3) AND ((step MOD 8) >= 4) THEN
-    mix := mix + Triangle(padPhase, pf, 2)
+    mix := mix + Triangle(padPhase, cachedPad, 2)
   END;
 
   IF ((step MOD 8) = 0) AND (pos < 980) THEN
@@ -309,13 +309,21 @@ BEGIN
 END SynthMusicSample;
 
 PROCEDURE MusicSample() : INTEGER;
+VAR value : INTEGER;
 BEGIN
   IF NOT musicEnabled THEN RETURN 0 END;
   CASE musicMode OF
-    Silent: RETURN 0
-  | SynthTrack: RETURN SynthMusicSample()
-  | ThemeTrack: RETURN ThemeSample()
-  END
+    Silent: value := 0
+  | SynthTrack: value := SynthMusicSample()
+  | ThemeTrack: value := ThemeSample()
+  END;
+  IF musicFadeRemaining > 0 THEN
+    value := ScaleSigned(value,
+              VAL(INTEGER, MusicFadeSamples-musicFadeRemaining),
+              MusicFadeSamples);
+    DEC(musicFadeRemaining)
+  END;
+  RETURN value
 END MusicSample;
 
 PROCEDURE RegisterSample(slot : CARDINAL; data : ARRAY OF CARDINAL8; length : CARDINAL);
@@ -422,6 +430,14 @@ VAR i, note, root : CARDINAL;
 BEGIN
   IF track > 5 THEN track := 0 END;
   soundtrack := track;
+  CASE track OF
+    1 : trackStepSamples := 3308
+  | 2 : trackStepSamples := 5513
+  | 3 : trackStepSamples := 4410
+  | 4 : trackStepSamples := 3675
+  ELSE trackStepSamples := 4009
+  END;
+  patternValid := FALSE;
   IF track = 5 THEN RETURN END;
   InitPatterns;
   IF track # 0 THEN
@@ -575,6 +591,10 @@ BEGIN
   musicEnabled := TRUE;
   musicMode := SynthTrack;
   soundtrack := 0;
+  trackStepSamples := 4009;
+  patternValid := FALSE;
+  musicSeed := VAL(CARDINAL, SDL2.SDL_GetTicks()) MOD 65521;
+  musicFadeRemaining := 0;
   InitPatterns;
   LoadTheme;
   LoadThemeVisualizer;
@@ -629,10 +649,33 @@ BEGIN
       menuThemePos := 0;
       menuThemeGenerated := 0
     ELSIF mode = SynthTrack THEN
-      musicClock := 0; leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0
+      musicClock := 0; leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0;
+      patternValid := FALSE
     END
   END
 END SetMusicMode;
+
+PROCEDURE NextMusicNumber() : CARDINAL;
+BEGIN
+  musicSeed := (musicSeed*65 + 17) MOD 65521;
+  RETURN musicSeed
+END NextMusicNumber;
+
+PROCEDURE StartTrack(choice : CARDINAL);
+BEGIN
+  IF choice > 5 THEN choice := NextMusicNumber() MOD 6 END;
+  SetTrack(choice);
+  IF choice = 5 THEN SetMusicMode(ThemeTrack)
+  ELSE SetMusicMode(SynthTrack) END;
+  musicFadeRemaining := MusicFadeSamples
+END StartTrack;
+
+PROCEDURE ShuffleTrack;
+VAR next : CARDINAL;
+BEGIN
+  next := (soundtrack + 1 + NextMusicNumber() MOD 5) MOD 6;
+  StartTrack(next)
+END ShuffleTrack;
 
 PROCEDURE SetIntensity(level : CARDINAL);
 BEGIN
@@ -688,6 +731,11 @@ BEGIN
   intensity := 0;
   masterVolume := 68;
   musicMode := SynthTrack;
+  soundtrack := 0;
+  trackStepSamples := 4009;
+  patternValid := FALSE;
+  musicSeed := 371;
+  musicFadeRemaining := 0;
   noiseState := 31741;
   menuThemeLength := 0;
   menuThemePos := 0;
