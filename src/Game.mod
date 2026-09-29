@@ -1524,41 +1524,41 @@ VAR blink, low, lowMid, highMid, high : CARDINAL;
 BEGIN
   Visuals.DrawLogo(tick);
   Visuals.DrawPanel(18, 81, 284, 83, TRUE);
-  FrameBuffer.VLine(180, 91, 154, 4);
+  FrameBuffer.VLine(148, 91, 154, 4);
 
-  CenterTextBox(23, 153, 91, "SELECT MODE", 6, 1);
+  CenterTextBox(23, 120, 91, "SELECT MODE", 6, 1);
   CASE selectedMode OF
-    CampaignMode : CenterTextBox(23, 153, 104, "CAMPAIGN", 12, 2);
-                   CenterTextBox(23, 153, 122, "24 SECTORS / 8 BOSSES", 5, 1)
-  | EndlessMode : CenterTextBox(23, 153, 104, "ENDLESS", 12, 2);
-                  CenterTextBox(23, 153, 122, "SURVIVE / SCORE ATTACK", 5, 1)
-  | BossRushMode : CenterTextBox(23, 153, 104, "BOSS RUSH", 12, 2);
-                   CenterTextBox(23, 153, 122, "8 UNIQUE ENCOUNTERS", 5, 1)
-  | GauntletMode : CenterTextBox(23, 153, 104, "GAUNTLET", 12, 2);
-                   CenterTextBox(23, 153, 122, "FAST WAVES / HARDER", 5, 1)
-  | TimeAttackMode : CenterTextBox(23, 153, 104, "TIME ATTACK", 12, 2);
-                     CenterTextBox(23, 153, 122, "4 MINUTE SCORE RUN", 5, 1)
-  | LanCoopMode : CenterTextBox(23, 153, 104, "LAN CO-OP", 12, 2);
-                  CenterTextBox(23, 153, 122, "TWO PILOT SURVIVAL", 5, 1)
-  | LanVersusMode : CenterTextBox(23, 153, 104, "LAN VERSUS", 12, 2);
-                    CenterTextBox(23, 153, 122, "PILOT DUEL / ROUNDS", 5, 1)
+    CampaignMode : CenterTextBox(23, 120, 104, "CAMPAIGN", 12, 2);
+                   CenterTextBox(23, 120, 122, "24 SECTORS / 8 BOSSES", 5, 1)
+  | EndlessMode : CenterTextBox(23, 120, 104, "ENDLESS", 12, 2);
+                  CenterTextBox(23, 120, 122, "SURVIVE / SCORE ATTACK", 5, 1)
+  | BossRushMode : CenterTextBox(23, 120, 104, "BOSS RUSH", 12, 2);
+                   CenterTextBox(23, 120, 122, "8 UNIQUE ENCOUNTERS", 5, 1)
+  | GauntletMode : CenterTextBox(23, 120, 104, "GAUNTLET", 12, 2);
+                   CenterTextBox(23, 120, 122, "FAST WAVES / HARDER", 5, 1)
+  | TimeAttackMode : CenterTextBox(23, 120, 104, "TIME ATTACK", 12, 2);
+                     CenterTextBox(23, 120, 122, "4 MINUTE SCORE RUN", 5, 1)
+  | LanCoopMode : CenterTextBox(23, 120, 104, "LAN CO-OP", 12, 2);
+                  CenterTextBox(23, 120, 122, "TWO PILOT SURVIVAL", 5, 1)
+  | LanVersusMode : CenterTextBox(23, 120, 104, "LAN VERSUS", 12, 2);
+                    CenterTextBox(23, 120, 122, "PILOT DUEL / ROUNDS", 5, 1)
   END;
 
-  FrameBuffer.HLine(30, 173, 136, 3);
-  Visuals.DrawHint(35, 146, Visuals.NavigateHint, "MODE", 7);
+  FrameBuffer.HLine(30, 137, 136, 3);
+  Visuals.DrawHint(31, 146, Visuals.NavigateHint, "MODE", 7);
   blink := (tick DIV 16) MOD 2;
   IF blink = 0 THEN
-    Visuals.DrawHint(113, 146, Visuals.ConfirmHint, "PLAY", 19)
+    Visuals.DrawHint(99, 146, Visuals.ConfirmHint, "PLAY", 19)
   ELSE
-    Visuals.DrawHint(113, 146, Visuals.ConfirmHint, "PLAY", 8)
+    Visuals.DrawHint(99, 146, Visuals.ConfirmHint, "PLAY", 8)
   END;
 
-  FrameBuffer.DrawText(188, 91, "YOUR SHIP", 6, 1);
-  ShipLabel(188, 103, 19);
-  ModifierLabel(188, 115, 12);
-  Visuals.DrawShipPreview(selectedShip, 270, 120, tick);
-  Visuals.DrawHint(188, 138, Visuals.MoveHint, "SHIP", 5);
-  Visuals.DrawHint(188, 151, Visuals.PulseHint, "HANGAR", 12);
+  FrameBuffer.DrawText(158, 91, "YOUR SHIP", 6, 1);
+  ShipLabel(158, 103, 19);
+  ModifierLabel(158, 115, 12);
+  Visuals.DrawShipPreview(selectedShip, 267, 120, tick);
+  Visuals.DrawHint(158, 138, Visuals.MoveHint, "SHIP", 5);
+  Visuals.DrawHint(158, 151, Visuals.PulseHint, "HANGAR", 12);
 
   low := Audio.ThemeMeter(0);
   lowMid := Audio.ThemeMeter(1);
