@@ -30,7 +30,7 @@ command -v readelf >/dev/null 2>&1 || { echo "error: readelf is required for por
 
 BUILDDIR=build/release
 MAINOBJ="$BUILDDIR/Main.o"
-OBJECTS="$BUILDDIR/RNG.o $BUILDDIR/FrameBuffer.o $BUILDDIR/Input.o $BUILDDIR/Audio.o $BUILDDIR/Visuals.o $BUILDDIR/Arena.o $BUILDDIR/Game.o $BUILDDIR/Platform.o $BUILDDIR/LanSocket.o"
+OBJECTS="$BUILDDIR/RNG.o $BUILDDIR/FrameBuffer.o $BUILDDIR/Input.o $BUILDDIR/Audio.o $BUILDDIR/Settings.o $BUILDDIR/Visuals.o $BUILDDIR/Arena.o $BUILDDIR/Game.o $BUILDDIR/Platform.o $BUILDDIR/LanSocket.o"
 
 [ -f "$MAINOBJ" ] || {
   echo "error: release objects are missing; run make release first" >&2

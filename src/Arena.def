@@ -7,6 +7,9 @@ PROCEDURE Draw;
 PROCEDURE Finished() : BOOLEAN;
 PROCEDURE Connected() : BOOLEAN;
 PROCEDURE MusicStage() : CARDINAL;
+PROCEDURE TogglePause;
+PROCEDURE SetLocalMenu(open : BOOLEAN);
+PROCEDURE IsPaused() : BOOLEAN;
 PROCEDURE Close;
 
 END Arena.

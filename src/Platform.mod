@@ -1,7 +1,7 @@
 IMPLEMENTATION MODULE Platform;
 
 FROM SYSTEM IMPORT ADR, CARDINAL32;
-IMPORT SDL2, FrameBuffer, Input, Audio;
+IMPORT SDL2, FrameBuffer, Input, Audio, Settings;
 
 CONST
   SDL_INIT_TIMER = 1;
@@ -93,13 +93,17 @@ BEGIN
   SDL2.SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
 
   Input.Init;
+  Settings.Init;
   soundOK := Audio.Init();
   IF NOT soundOK THEN Audio.SetMusic(FALSE) END;
+  IF Settings.Get(Settings.Fullscreen) = 1 THEN ToggleFullscreen END;
   RETURN TRUE
 END Open;
 
 PROCEDURE Close;
+VAR saved : BOOLEAN;
 BEGIN
+  saved := Settings.Save();
   Input.Shutdown;
   Audio.Shutdown;
   IF texture # NIL THEN SDL2.SDL_DestroyTexture(texture); texture := NIL END;
@@ -122,12 +126,23 @@ BEGIN
 END Poll;
 
 PROCEDURE CalculateDestination(outputW, outputH : INTEGER; VAR dst : SDL2.SDL_Rect);
+VAR scale, verticalScale : INTEGER;
 BEGIN
   IF (outputW <= 0) OR (outputH <= 0) THEN
     dst.x := 0; dst.y := 0; dst.w := 0; dst.h := 0;
     RETURN
   END;
 
+  IF Settings.Get(Settings.PixelScale) = 1 THEN
+    scale := outputW DIV FrameBuffer.Width;
+    verticalScale := outputH DIV FrameBuffer.Height;
+    IF verticalScale < scale THEN scale := verticalScale END;
+    IF scale >= 1 THEN
+      dst.w := FrameBuffer.Width*scale; dst.h := FrameBuffer.Height*scale;
+      dst.x := (outputW-dst.w) DIV 2; dst.y := (outputH-dst.h) DIV 2;
+      RETURN
+    END
+  END;
   (* Same aspect check, no float needed. *)
   IF outputW * FrameBuffer.Height <= outputH * FrameBuffer.Width THEN
     dst.w := outputW;
@@ -183,13 +198,14 @@ BEGIN
 END RequestQuit;
 
 PROCEDURE ToggleFullscreen;
-VAR target : CARDINAL32;
+VAR target : CARDINAL32; result : INTEGER;
 BEGIN
   IF window = NIL THEN RETURN END;
   IF IsFullscreen() THEN target := VAL(CARDINAL32, 0)
   ELSE target := VAL(CARDINAL32, SDL_WINDOW_FULLSCREEN_DESKTOP)
   END;
-  SDL2.SDL_SetWindowFullscreen(window, target)
+  result := SDL2.SDL_SetWindowFullscreen(window, target);
+  Settings.Set(Settings.Fullscreen, ORD(IsFullscreen()))
 END ToggleFullscreen;
 
 PROCEDURE IsFullscreen() : BOOLEAN;

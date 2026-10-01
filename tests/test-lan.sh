@@ -11,7 +11,7 @@ sdl_flags=$($pkg_config --cflags sdl2)
 sdl_libs=$($pkg_config --libs sdl2)
 
 "${CC:-cc}" -O2 -c tests/ProbeEnv.c -o "$probe_dir/ProbeEnv.o"
-for module in LanProbe LanWire; do
+for module in LanProbe LanWire LanReceive; do
   "$gm2" -fpim4 -I src -I tests -Wall $sdl_flags -c -fscaffold-main \
     "tests/$module.mod" -o "$probe_dir/$module.o"
   "$gm2" -fpim4 "$probe_dir/$module.o" "$probe_dir/ProbeEnv.o" \
@@ -19,6 +19,9 @@ for module in LanProbe LanWire; do
     build/release/Input.o build/release/Audio.o build/release/Visuals.o \
     build/release/Arena.o -o "$probe_dir/$module" $sdl_libs
 done
+
+"${CC:-cc}" -shared -fPIC -Wall -Wextra -Werror src/LanSocket.c -o "$probe_dir/liblan.so"
+python3 tests/probe_socket.py "$probe_dir/liblan.so"
 
 "$probe_dir/LanProbe" &
 host_pid=$!
@@ -44,3 +47,5 @@ if [ "$wire_status" -ne 0 ]; then
   echo "LAN sound probe failed: status=$wire_status" >&2
   exit 1
 fi
+
+python3 tests/probe_snapshot.py "$probe_dir/LanReceive"

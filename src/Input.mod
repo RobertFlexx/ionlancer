@@ -7,7 +7,7 @@ CONST
   SC_X = 27; SC_Z = 29; SC_RETURN = 40; SC_ESCAPE = 41; SC_SPACE = 44;
   SC_BACKSPACE = 42; SC_PERIOD = 55;
   SC_KP_1 = 89; SC_KP_0 = 98; SC_KP_PERIOD = 99;
-  SC_F11 = 68; SC_RIGHT = 79; SC_LEFT = 80; SC_DOWN = 81; SC_UP = 82;
+  SC_F2 = 59; SC_F11 = 68; SC_RIGHT = 79; SC_LEFT = 80; SC_DOWN = 81; SC_UP = 82;
   SC_LCTRL = 224; SC_LSHIFT = 225; SC_LGUI = 227;
   SC_RCTRL = 228; SC_RGUI = 231;
   PAD_AXIS_LEFTX = 0; PAD_AXIS_LEFTY = 1;
@@ -15,7 +15,7 @@ CONST
   PAD_AXIS_TRIGGERLEFT = 4; PAD_AXIS_TRIGGERRIGHT = 5;
   PAD_BUTTON_A = 0; PAD_BUTTON_B = 1; PAD_BUTTON_X = 2; PAD_BUTTON_Y = 3;
   PAD_BUTTON_BACK = 4; PAD_BUTTON_START = 6;
-  PAD_BUTTON_RIGHTSTICK = 8;
+  PAD_BUTTON_LEFTSTICK = 7; PAD_BUTTON_RIGHTSTICK = 8;
   PAD_BUTTON_LEFTSHOULDER = 9; PAD_BUTTON_RIGHTSHOULDER = 10;
   PAD_BUTTON_DPAD_UP = 11; PAD_BUTTON_DPAD_DOWN = 12;
   PAD_BUTTON_DPAD_LEFT = 13; PAD_BUTTON_DPAD_RIGHT = 14;
@@ -57,7 +57,7 @@ BEGIN
         SDL2.SDL_GameControllerClose(controllers[slot]);
         controllers[slot] := NIL;
         IF activeSlot = slot THEN activeSlot := -1; controllerActive := FALSE END;
-        FOR a := Left TO FastEdit DO
+        FOR a := Left TO Options DO
           slotState[slot][a] := FALSE; oldSlotState[slot][a] := FALSE
         END
       END
@@ -84,7 +84,7 @@ BEGIN
           | 5, 11, 12, 13 : families[freeSlot] := NintendoPad
           ELSE families[freeSlot] := GenericPad
           END;
-          FOR a := Left TO FastEdit DO
+          FOR a := Left TO Options DO
             slotState[freeSlot][a] := FALSE;
             oldSlotState[freeSlot][a] := FALSE
           END
@@ -102,7 +102,7 @@ BEGIN
   typedNumber := -1; typedPoint := FALSE; typedErase := FALSE;
   oldPoint := FALSE; oldErase := FALSE;
   FOR digit := 0 TO 9 DO oldDigits[digit] := FALSE; oldKeypad[digit] := FALSE END;
-  FOR a := Left TO FastEdit DO
+  FOR a := Left TO Options DO
     current[a] := FALSE; previous[a] := FALSE; pressedLatch[a] := FALSE;
     keyState[a] := FALSE; oldKeyState[a] := FALSE;
     padState[a] := FALSE;
@@ -111,7 +111,7 @@ BEGIN
   FOR slot := 0 TO MaxPads-1 DO
     controllers[slot] := NIL; instanceID[slot] := -1;
     families[slot] := GenericPad;
-    FOR a := Left TO FastEdit DO
+    FOR a := Left TO Options DO
       slotState[slot][a] := FALSE; oldSlotState[slot][a] := FALSE
     END
   END;
@@ -158,12 +158,12 @@ BEGIN
   SDL2.SDL_PumpEvents;
   FindControllers;
   now := VAL(CARDINAL, SDL2.SDL_GetTicks());
-  FOR a := Left TO FastEdit DO
+  FOR a := Left TO Options DO
     previous[a] := current[a];
     oldKeyState[a] := keyState[a]
   END;
   FOR slot := 0 TO MaxPads-1 DO
-    FOR a := Left TO FastEdit DO oldSlotState[slot][a] := slotState[slot][a] END
+    FOR a := Left TO Options DO oldSlotState[slot][a] := slotState[slot][a] END
   END;
 
   commandDown := KeyDown(SC_LGUI) OR KeyDown(SC_RGUI);
@@ -178,6 +178,7 @@ BEGIN
   keyState[Fire] := KeyDown(SC_SPACE) OR KeyDown(SC_Z);
   keyState[AltFire] := KeyDown(SC_X) OR KeyDown(SC_LSHIFT);
   keyState[Start] := (KeyDown(SC_RETURN) AND NOT macShortcut) OR KeyDown(SC_Z);
+  keyState[Options] := KeyDown(SC_F2);
   keyState[Pause] := KeyDown(SC_P);
   keyState[Menu] := KeyDown(SC_M);
   keyState[Fullscreen] := KeyDown(SC_F11) OR macShortcut;
@@ -186,7 +187,6 @@ BEGIN
   keyState[SwitchRole] := KeyDown(SC_X) OR KeyDown(SC_LSHIFT);
   keyState[FastEdit] := KeyDown(SC_LCTRL) OR KeyDown(SC_RCTRL);
 
-  typedNumber := -1;
   FOR digit := 0 TO 9 DO
     IF digit = 0 THEN
       down := KeyDown(39);
@@ -201,11 +201,11 @@ BEGIN
   END;
   pointDown := KeyDown(SC_PERIOD) OR KeyDown(SC_KP_PERIOD);
   eraseDown := KeyDown(SC_BACKSPACE);
-  typedPoint := pointDown AND NOT oldPoint;
-  typedErase := eraseDown AND NOT oldErase;
+  typedPoint := typedPoint OR (pointDown AND NOT oldPoint);
+  typedErase := typedErase OR (eraseDown AND NOT oldErase);
   oldPoint := pointDown; oldErase := eraseDown;
 
-  FOR a := Left TO FastEdit DO padState[a] := FALSE END;
+  FOR a := Left TO Options DO padState[a] := FALSE END;
   keyActivity := FALSE; padActivity := FALSE;
   FOR slot := 0 TO MaxPads-1 DO
     slotState[slot][Left] := PadButton(slot, PAD_BUTTON_DPAD_LEFT) OR
@@ -232,13 +232,14 @@ BEGIN
     slotState[slot][Pause] := PadButton(slot, PAD_BUTTON_START);
     slotState[slot][Menu] := PadButton(slot, PAD_BUTTON_BACK);
     slotState[slot][Fullscreen] := PadButton(slot, PAD_BUTTON_RIGHTSTICK);
+    slotState[slot][Options] := PadButton(slot, PAD_BUTTON_LEFTSTICK);
     slotState[slot][Back] := FALSE;
     slotState[slot][Cancel] := PadButton(slot, PAD_BUTTON_B);
     slotState[slot][SwitchRole] := PadButton(slot, PAD_BUTTON_X) OR
                                    PadButton(slot, PAD_BUTTON_Y) OR
                                    PadButton(slot, PAD_BUTTON_LEFTSHOULDER);
     slotState[slot][FastEdit] := PadButton(slot, PAD_BUTTON_RIGHTSHOULDER);
-    FOR a := Left TO FastEdit DO
+    FOR a := Left TO Options DO
       padState[a] := padState[a] OR slotState[slot][a];
       IF slotState[slot][a] AND NOT oldSlotState[slot][a] THEN
         padActivity := TRUE;
@@ -247,7 +248,7 @@ BEGIN
     END
   END;
 
-  FOR a := Left TO FastEdit DO
+  FOR a := Left TO Options DO
     current[a] := keyState[a] OR padState[a];
     IF keyState[a] AND NOT oldKeyState[a] THEN keyActivity := TRUE END;
     IF current[a] AND NOT previous[a] THEN pressedLatch[a] := TRUE END;
@@ -288,7 +289,7 @@ BEGIN RETURN pressedLatch[action] OR menuPulse[action] END MenuStep;
 PROCEDURE ClearPressed;
 VAR a : Action;
 BEGIN
-  FOR a := Left TO FastEdit DO pressedLatch[a] := FALSE; menuPulse[a] := FALSE END;
+  FOR a := Left TO Options DO pressedLatch[a] := FALSE; menuPulse[a] := FALSE END;
   typedNumber := -1; typedPoint := FALSE; typedErase := FALSE
 END ClearPressed;
 
@@ -315,7 +316,7 @@ END ControllerFamily;
 
 BEGIN
   controllerActive := FALSE; activeSlot := -1;
-  FOR initAction := Left TO FastEdit DO
+  FOR initAction := Left TO Options DO
     current[initAction] := FALSE; previous[initAction] := FALSE;
     pressedLatch[initAction] := FALSE;
     keyState[initAction] := FALSE; oldKeyState[initAction] := FALSE;

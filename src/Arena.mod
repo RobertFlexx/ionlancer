@@ -8,7 +8,7 @@ CONST
   MaxFoes = 16;
   MaxHostile = 32;
   PacketCapacity = 600;
-  PacketVersion = 2;
+  PacketVersion = 3;
   SnapshotBytes = 19 + 8 + 2*10 + 9 + MaxBolts*6 + MaxFoes*6 + MaxHostile*4;
   LanPort = 37177;
 
@@ -41,8 +41,8 @@ VAR
   tx, rx : ARRAY [0..PacketCapacity-1] OF CARDINAL8;
   txPos, rxPos : CARDINAL;
   coop, host, connected, everConnected, done, modeMismatch, hostCoop : BOOLEAN;
-  peerLeft : BOOLEAN;
-  soundValid, hasRemoteSeq : BOOLEAN;
+  peerLeft, localPaused, localMenu, matchPaused : BOOLEAN;
+  soundValid, hasRemoteSeq, hasSnapshotSeq : BOOLEAN;
   frame, lastPacket, lastSnapshot, wave, waveTimer, spawnTimer : CARDINAL;
   lastRemoteSeq : CARDINAL;
   soundSeq : ARRAY [0..7] OF CARDINAL;
@@ -157,7 +157,8 @@ BEGIN
   frame := 0; lastPacket := 0; lastSnapshot := 0;
   connected := FALSE; everConnected := FALSE; done := FALSE; winner := 0;
   modeMismatch := FALSE; peerLeft := FALSE;
-  soundValid := FALSE; hasRemoteSeq := FALSE;
+  localPaused := FALSE; localMenu := FALSE; matchPaused := FALSE;
+  soundValid := FALSE; hasRemoteSeq := FALSE; hasSnapshotSeq := FALSE;
   hostCoop := coop;
   lastRemoteSeq := 0;
   FOR i := 0 TO 7 DO soundSeq[i] := 0 END;
@@ -185,6 +186,7 @@ BEGIN
   result := LanSocket.ion_lan_open(ORD(hosting), VAL(INTEGER,a), VAL(INTEGER,b),
               VAL(INTEGER,c), VAL(INTEGER,d), LanPort);
   IF result = 0 THEN RETURN FALSE END;
+  LanSocket.ion_lan_set_mode(ORD(cooperative));
   localShip := ship MOD 5; localModifier := modifier MOD 7;
   ResetMatch;
   RETURN TRUE
@@ -213,9 +215,19 @@ BEGIN
   RETURN rounds[0]+rounds[1]+1
 END MusicStage;
 
+PROCEDURE IsPaused() : BOOLEAN;
+BEGIN RETURN matchPaused END IsPaused;
+
+PROCEDURE TogglePause;
+BEGIN localPaused := NOT localPaused END TogglePause;
+
+PROCEDURE SetLocalMenu(open : BOOLEAN);
+BEGIN localMenu := open END SetLocalMenu;
+
 PROCEDURE LocalMask() : CARDINAL;
 VAR mask : CARDINAL;
 BEGIN
+  IF localPaused OR localMenu THEN RETURN 64 END;
   mask := 0;
   IF Input.Held(Input.Left) THEN INC(mask, 1) END;
   IF Input.Held(Input.Right) THEN INC(mask, 2) END;
@@ -253,7 +265,7 @@ BEGIN
   count := 0;
   REPEAT
     n := LanSocket.ion_lan_recv(ADR(rx), PacketCapacity);
-    IF (n >= 4) AND (rx[0] = 73) AND (rx[1] = 76) AND
+    IF (n = 4) AND (rx[0] = 73) AND (rx[1] = 76) AND
        (rx[2] = PacketVersion) AND (rx[3] = 3) THEN
       ResetMatch;
       LanSocket.ion_lan_release_peer(0)
@@ -270,17 +282,20 @@ BEGIN
           delta := (seq + 65536 - lastRemoteSeq) MOD 65536;
           IF (NOT hasRemoteSeq) OR ((delta > 0) AND (delta < 32768)) THEN
             remoteMask := VAL(CARDINAL, rx[6]);
-            lastRemoteSeq := seq; hasRemoteSeq := TRUE
-          END;
-          ship := VAL(CARDINAL, rx[7]) MOD 5;
-          modifier := VAL(CARDINAL, rx[8]) MOD 7;
-          IF NOT everConnected THEN
-            SetPilot(1, ship, modifier);
-            IF NOT coop THEN pilots[1].x := 250; pilots[1].y := 102 END;
-            PlaySound(Audio.StartJingle)
-          END;
-          connected := TRUE; everConnected := TRUE;
-          lastPacket := frame
+            lastRemoteSeq := seq; hasRemoteSeq := TRUE;
+            lastPacket := frame;
+            ship := VAL(CARDINAL, rx[7]); modifier := VAL(CARDINAL, rx[8]);
+            IF NOT everConnected THEN
+              SetPilot(1, ship, modifier);
+              IF NOT coop THEN pilots[1].x := 250; pilots[1].y := 102 END;
+              PlaySound(Audio.StartJingle)
+            END;
+            connected := TRUE; everConnected := TRUE
+          ELSIF NOT connected THEN
+            (* A replay after timeout cannot reclaim the socket's peer slot
+               and block a fresh packet from the same pilot's new port. *)
+            LanSocket.ion_lan_release_peer(1)
+          END
         END
       END
     END;
@@ -294,7 +309,7 @@ BEGIN
   txPos := 0;
   Put8(73); Put8(76); Put8(PacketVersion); Put8(2);
   Put16(frame MOD 65536);
-  Put8(ORD(coop)); Put8(ORD(done)); Put8(winner); Put8(wave MOD 256);
+  Put8(ORD(coop)); Put8(ORD(done)+ORD(matchPaused)*2); Put8(winner); Put8(wave MOD 256);
   Put16(score MOD 65536); Put16(score DIV 65536);
   Put16(timeLeft MOD 65536);
   Put8(rounds[0]); Put8(rounds[1]); Put8(roundPause);
@@ -322,6 +337,49 @@ BEGIN
   sent := LanSocket.ion_lan_send(ADR(tx), VAL(INTEGER, txPos))
 END SendSnapshot;
 
+PROCEDURE ValidPosition(offset : CARDINAL) : BOOLEAN;
+BEGIN
+  RETURN (VAL(CARDINAL,rx[offset])+VAL(CARDINAL,rx[offset+1])*256 <= 392) AND
+         (rx[offset+2] <= 254)
+END ValidPosition;
+
+PROCEDURE ValidSnapshot() : BOOLEAN;
+VAR i, offset, health, maximum : CARDINAL;
+BEGIN
+  IF (rx[6] > 1) OR (rx[7] > 3) OR (rx[8] > 3) OR
+     (rx[9] < 1) OR (rx[9] > 8) OR (rx[16] > 3) OR (rx[17] > 3) OR
+     (rx[18] > 75) THEN RETURN FALSE END;
+  IF VAL(CARDINAL,rx[14])+VAL(CARDINAL,rx[15])*256 > 10800 THEN RETURN FALSE END;
+  FOR i := 0 TO 1 DO
+    offset := 27+i*10;
+    IF (NOT ValidPosition(offset)) OR (rx[offset+3] > 4) OR
+       (rx[offset+5] > 100) OR (rx[offset+6] >= 5) OR
+       (rx[offset+7] >= 7) OR (rx[offset+8] > 1) OR (rx[offset+9] > 1) THEN
+      RETURN FALSE
+    END
+  END;
+  health := VAL(CARDINAL,rx[51])+VAL(CARDINAL,rx[52])*256;
+  maximum := VAL(CARDINAL,rx[53])+VAL(CARDINAL,rx[54])*256;
+  IF (rx[47] > 1) OR (NOT ValidPosition(48)) OR (rx[55] >= 8) OR
+     (health > maximum) OR (maximum > 512) THEN RETURN FALSE END;
+  offset := 56;
+  FOR i := 0 TO MaxBolts-1 DO
+    IF (rx[offset] > 1) OR (NOT ValidPosition(offset+1)) OR
+       (rx[offset+4] > 1) OR (rx[offset+5] > 3) THEN RETURN FALSE END;
+    INC(offset,6)
+  END;
+  FOR i := 0 TO MaxFoes-1 DO
+    IF (rx[offset] > 1) OR (rx[offset+1] >= 11) OR
+       (NOT ValidPosition(offset+2)) OR (rx[offset+5] > 32) THEN RETURN FALSE END;
+    INC(offset,6)
+  END;
+  FOR i := 0 TO MaxHostile-1 DO
+    IF (rx[offset] > 1) OR (NOT ValidPosition(offset+1)) THEN RETURN FALSE END;
+    INC(offset,4)
+  END;
+  RETURN TRUE
+END ValidSnapshot;
+
 PROCEDURE ReadSnapshot;
 VAR n, count, i : INTEGER; seq, delta, scoreLo, scoreHi, nextSound : CARDINAL;
     played : ARRAY [0..7] OF BOOLEAN;
@@ -330,7 +388,7 @@ BEGIN
   FOR i := 0 TO 7 DO played[i] := FALSE END;
   REPEAT
     n := LanSocket.ion_lan_recv(ADR(rx), PacketCapacity);
-    IF (n >= 4) AND (rx[0] = 73) AND (rx[1] = 76) AND
+    IF (n = 4) AND (rx[0] = 73) AND (rx[1] = 76) AND
        (rx[2] = PacketVersion) AND (rx[3] = 3) THEN
       connected := FALSE; soundValid := FALSE; peerLeft := TRUE
     END;
@@ -339,7 +397,7 @@ BEGIN
       modeMismatch := TRUE; hostCoop := rx[4] # 0;
       connected := FALSE; soundValid := FALSE
     END;
-    IF (n = SnapshotBytes) AND (NOT peerLeft) THEN
+    IF (n = SnapshotBytes) AND (NOT peerLeft) AND ValidSnapshot() THEN
       IF (rx[0] = 73) AND (rx[1] = 76) AND
          (rx[2] = PacketVersion) AND (rx[3] = 2) THEN
         IF (rx[6] # 0) # coop THEN
@@ -348,11 +406,12 @@ BEGIN
           rxPos := 4;
           seq := Get16();
           delta := (seq + 65536 - lastSnapshot) MOD 65536;
-          IF (NOT connected) OR ((delta > 0) AND (delta < 32768)) THEN
-            lastSnapshot := seq;
+          IF (NOT hasSnapshotSeq) OR ((delta > 0) AND (delta < 32768)) THEN
+            lastSnapshot := seq; hasSnapshotSeq := TRUE;
             connected := TRUE; everConnected := TRUE; lastPacket := frame;
             modeMismatch := FALSE;
-            coop := Get8() # 0; done := Get8() # 0;
+            coop := Get8() # 0;
+            delta := Get8(); done := (delta MOD 2) # 0; matchPaused := delta >= 2;
             winner := Get8(); wave := Get8();
             scoreLo := Get16(); scoreHi := Get16();
             score := scoreLo + scoreHi*65536;
@@ -763,15 +822,17 @@ END UpdateCoopWave;
 PROCEDURE UpdateWorld;
 VAR i, regenRate : CARDINAL;
 BEGIN
-  IF done THEN RETURN END;
+  IF done OR matchPaused THEN RETURN END;
   IF roundPause > 0 THEN
     DEC(roundPause);
     RETURN
   END;
   MovePilot(0, LocalMask());
+  IF done OR (roundPause > 0) THEN RETURN END;
   MovePilot(1, remoteMask);
+  IF done OR (roundPause > 0) THEN RETURN END;
   UpdateBolts;
-  IF done THEN RETURN END;
+  IF done OR (roundPause > 0) THEN RETURN END;
   IF coop THEN
     UpdateFoes;
     UpdateHostile;
@@ -801,19 +862,19 @@ BEGIN
   INC(frame);
   IF host THEN
     ReadInputs;
-    IF connected AND (frame-lastPacket > 12) THEN remoteMask := 0 END;
+    IF connected AND (frame-lastPacket > 12) THEN remoteMask := (remoteMask DIV 64)*64 END;
     IF connected AND (frame-lastPacket > 240) THEN
       connected := FALSE;
       remoteMask := 0;
-      hasRemoteSeq := FALSE;
       LanSocket.ion_lan_release_peer(1)
     END;
     IF connected THEN
+      matchPaused := localPaused OR localMenu OR Has(remoteMask,64);
       UpdateWorld;
       SendSnapshot
     END
   ELSE
-    IF NOT peerLeft THEN SendInput END;
+    IF NOT peerLeft AND NOT modeMismatch THEN SendInput END;
     ReadSnapshot;
     IF connected AND (frame-lastPacket > 240) THEN
       connected := FALSE; soundValid := FALSE
@@ -966,6 +1027,14 @@ BEGIN
     ELSE Center(73, "CONNECTING TO HOST", 19, 1) END;
     Center(88, "UDP PORT 37177", 6, 1);
     Visuals.CenterHint(54, 212, 103, Visuals.MenuHint, "MAIN MENU", 12)
+  ELSIF matchPaused AND NOT done THEN
+    Visuals.DrawPanel(54, 61, 212, 70, TRUE);
+    Center(72, "MATCH PAUSED", 12, 2);
+    IF localPaused OR localMenu THEN Center(94, "YOU PAUSED / BOTH PILOTS WAIT", 6, 1)
+    ELSE Center(94, "OTHER PILOT PAUSED", 6, 1) END;
+    IF localPaused OR localMenu THEN
+      Visuals.CenterHint(54, 212, 111, Visuals.PauseHint, "RESUME", 12)
+    ELSE Center(111, "WAIT FOR OTHER PILOT", 5, 1) END
   ELSIF done THEN
     Visuals.DrawPanel(43, 53, 234, 87, TRUE);
     IF coop THEN

@@ -6,7 +6,7 @@ CONST
   MaxUpdatesPerFrame = 5;
 
 VAR
-  lastTick, nowTick, elapsed, accumulator, updates : CARDINAL;
+  lastTick, nowTick, elapsed, accumulator, updates, renderTime, waitTime : CARDINAL;
 
 BEGIN
   IF NOT Platform.Open() THEN HALT(1) END;
@@ -39,7 +39,11 @@ BEGIN
     Game.Draw;
     Platform.Present;
 
-    IF elapsed < 2 THEN Platform.Sleep(1) END
+    (* Present once per simulation frame instead of redrawing hundreds of times
+       a second. Rendering time counts toward the next fixed 60 Hz tick. *)
+    renderTime := Platform.Ticks()-nowTick;
+    waitTime := (1000-accumulator+59) DIV 60;
+    IF renderTime < waitTime THEN Platform.Sleep(waitTime-renderTime) END
   END;
 
   Platform.Close

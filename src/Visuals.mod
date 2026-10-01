@@ -738,7 +738,7 @@ END DrawHeart;
 PROCEDURE KeyWidth(hint : ControlHint) : INTEGER;
 BEGIN
   CASE hint OF
-    NavigateHint : RETURN 18
+    NavigateHint, SettingsHint : RETURN 18
   | MoveHint : RETURN 30
   | FastHint : RETURN 30
   | CancelHint : RETURN 24
@@ -750,7 +750,7 @@ END KeyWidth;
 PROCEDURE PadWidth(hint : ControlHint) : INTEGER;
 BEGIN
   IF (hint = PauseHint) OR (hint = MenuHint) OR (hint = FullscreenHint) OR
-     (hint = FastHint) THEN
+     (hint = FastHint) OR (hint = SettingsHint) THEN
     RETURN 16
   END;
   RETURN 12
@@ -786,6 +786,7 @@ BEGIN
   | CancelHint : FrameBuffer.DrawText(x+3, y+2, "ESC", 8, 1)
   | PulseHint : FrameBuffer.DrawText(x+3, y+2, "X", 8, 1)
   | FastHint : FrameBuffer.DrawText(x+3, y+2, "CTRL", 8, 1)
+  | SettingsHint : FrameBuffer.DrawText(x+3, y+2, "F2", 8, 1)
   | PauseHint : FrameBuffer.DrawText(x+3, y+2, "P", 8, 1)
   | MenuHint : FrameBuffer.DrawText(x+3, y+2, "M", 8, 1)
   | FullscreenHint :
@@ -867,7 +868,7 @@ BEGIN
   | ConfirmHint, FireHint : DrawFace(x, y, 0)
   | CancelHint : DrawFace(x, y, 1)
   | PulseHint : DrawFace(x, y, 2)
-  | PauseHint, MenuHint, FullscreenHint, FastHint :
+  | PauseHint, MenuHint, FullscreenHint, FastHint, SettingsHint :
       FrameBuffer.FillRect(x+1, y+2, 15, 9, 2);
       FrameBuffer.FillRect(x, y, 16, 10, 3);
       FrameBuffer.Rect(x, y, 16, 10, 6);
@@ -886,6 +887,8 @@ BEGIN
         ELSE
           FrameBuffer.DrawText(x+2, y+2, "RB", 19, 1)
         END
+      ELSIF hint = SettingsHint THEN
+        FrameBuffer.DrawText(x+2, y+2, "L3", 12, 1)
       ELSE
         FrameBuffer.DrawText(x+2, y+2, "R3", 12, 1)
       END

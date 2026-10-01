@@ -2,13 +2,14 @@ DEFINITION MODULE FOR "C" CStdio;
 
 FROM SYSTEM IMPORT ADDRESS, CARDINAL32;
 
-EXPORT UNQUALIFIED FILE, fopen, fread, fclose;
+EXPORT UNQUALIFIED FILE, fopen, fread, fwrite, fclose;
 
 TYPE
   FILE = ADDRESS;
 
 PROCEDURE fopen(path, mode : ADDRESS) : FILE;
 PROCEDURE fread(ptr : ADDRESS; size, count : CARDINAL32; stream : FILE) : CARDINAL32;
+PROCEDURE fwrite(ptr : ADDRESS; size, count : CARDINAL32; stream : FILE) : CARDINAL32;
 PROCEDURE fclose(stream : FILE) : INTEGER;
 
 END CStdio.

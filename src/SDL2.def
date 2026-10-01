@@ -19,6 +19,7 @@ EXPORT UNQUALIFIED
   SDL_GameControllerGetAttached, SDL_GameControllerGetType,
   SDL_JoystickGetDeviceInstanceID,
   SDL_GetPlatform,
+  SDL_GetPrefPath, SDL_free,
   SDL_GetTicks, SDL_Delay,
   SDL_OpenAudioDevice, SDL_CloseAudioDevice, SDL_PauseAudioDevice,
   SDL_QueueAudio, SDL_GetQueuedAudioSize, SDL_ClearQueuedAudio;
@@ -97,6 +98,8 @@ PROCEDURE SDL_GameControllerGetAxis(controller : SDL_GameController; axis : INTE
 PROCEDURE SDL_GameControllerGetButton(controller : SDL_GameController; button : INTEGER) : CARDINAL8;
 PROCEDURE SDL_JoystickGetDeviceInstanceID(index : INTEGER) : INTEGER;
 PROCEDURE SDL_GetPlatform() : SDL_CString;
+PROCEDURE SDL_GetPrefPath(org, app : ADDRESS) : ADDRESS;
+PROCEDURE SDL_free(memory : ADDRESS);
 
 PROCEDURE SDL_GetTicks() : CARDINAL32;
 PROCEDURE SDL_Delay(ms : CARDINAL32);

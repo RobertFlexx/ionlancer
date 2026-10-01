@@ -3,7 +3,7 @@ DEFINITION MODULE Visuals;
 TYPE
   ControlHint = (NavigateHint, MoveHint, ConfirmHint, CancelHint,
                  FireHint, PulseHint, PauseHint, MenuHint, FullscreenHint,
-                 FastHint);
+                 FastHint, SettingsHint);
 
 PROCEDURE DrawPlayer(x, y : INTEGER; frame : CARDINAL; bank : INTEGER;
                      shield : BOOLEAN);

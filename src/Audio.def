@@ -5,6 +5,13 @@ FROM SYSTEM IMPORT CARDINAL8;
 TYPE
   Effect = (Laser, Explosion, Hit, Power, StartJingle, Hurt, BossPulse, MenuBlip);
   MusicMode = (Silent, SynthTrack, ThemeTrack);
+  Channel = (MasterChannel, MusicChannel, WeaponChannel, ImpactChannel,
+             AlertChannel, InterfaceChannel);
+
+CONST
+  TrackCount = 9;
+  ThemeSong = 5;
+  ShuffleChoice = TrackCount;
 
 PROCEDURE Init() : BOOLEAN;
 PROCEDURE Shutdown;
@@ -15,10 +22,14 @@ PROCEDURE PlaySample(slot, volume : CARDINAL);
 PROCEDURE SetMusic(enabled : BOOLEAN);
 PROCEDURE SetMusicMode(mode : MusicMode);
 PROCEDURE SetTrack(track : CARDINAL);
+PROCEDURE PreviewTrack(choice : CARDINAL);
 PROCEDURE StartTrack(choice : CARDINAL);
 PROCEDURE ShuffleTrack;
+PROCEDURE CurrentTrack() : CARDINAL;
 PROCEDURE SetIntensity(level : CARDINAL);
 PROCEDURE SetMasterVolume(volume : CARDINAL);
+PROCEDURE SetVolume(channel : Channel; volume : CARDINAL);
+PROCEDURE GetVolume(channel : Channel) : CARDINAL;
 PROCEDURE IsAvailable() : BOOLEAN;
 PROCEDURE ThemeMeter(band : CARDINAL) : CARDINAL;
 

@@ -2,7 +2,7 @@ DEFINITION MODULE Input;
 
 TYPE
   Action = (Left, Right, Up, Down, Fire, AltFire, Start, Pause,
-            Menu, Fullscreen, Back, Cancel, SwitchRole, FastEdit);
+            Menu, Fullscreen, Back, Cancel, SwitchRole, FastEdit, Options);
   PadFamily = (XboxPad, PlayStationPad, NintendoPad, GenericPad);
 
 PROCEDURE Init;

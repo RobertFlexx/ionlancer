@@ -1,0 +1,11 @@
+DEFINITION MODULE FOR "C" Runtime;
+FROM SYSTEM IMPORT ADDRESS;
+EXPORT UNQUALIFIED ion_test_key, ion_test_pad, ion_test_drain,
+                   ion_test_energy, ion_test_frame, ion_test_record;
+PROCEDURE ion_test_key(code, down : INTEGER);
+PROCEDURE ion_test_pad(button, down : INTEGER);
+PROCEDURE ion_test_drain;
+PROCEDURE ion_test_energy() : INTEGER;
+PROCEDURE ion_test_frame(pixels : ADDRESS; slot : INTEGER);
+PROCEDURE ion_test_record(track : INTEGER);
+END Runtime.

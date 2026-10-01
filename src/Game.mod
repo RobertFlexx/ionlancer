@@ -1,6 +1,6 @@
 IMPLEMENTATION MODULE Game;
 
-IMPORT FrameBuffer, Visuals, Input, Audio, RNG, Arena;
+IMPORT FrameBuffer, Visuals, Input, Audio, RNG, Arena, Settings, Platform;
 
 CONST
   FP = 256;
@@ -13,7 +13,7 @@ CONST
 
 TYPE
   GameState = (Title, Controls, Hangar, LanSetup, LanPlaying, Playing,
-               Paused, GameOver, Victory);
+               Paused, GameOver, Victory, SettingsMenu);
   PlayMode = (CampaignMode, EndlessMode, BossRushMode, GauntletMode,
               TimeAttackMode, LanCoopMode, LanVersusMode);
 
@@ -65,7 +65,9 @@ TYPE
   END;
 
 VAR
-  state : GameState;
+  state, settingsReturn : GameState;
+  settingsTab, settingsRow, musicTimer : CARDINAL;
+  settingsSaveError : BOOLEAN;
   player : PlayerRec;
   shots : ARRAY [0..MaxShots-1] OF ShotRec;
   enemies : ARRAY [0..MaxEnemies-1] OF EnemyRec;
@@ -420,6 +422,11 @@ BEGIN
   Audio.SetIntensity(0)
 END EnterTitle;
 
+PROCEDURE RotateMusic;
+BEGIN
+  Audio.ShuffleTrack; musicTimer := 0
+END RotateMusic;
+
 PROCEDURE StartGame;
 BEGIN
   ClearObjects;
@@ -459,7 +466,7 @@ BEGIN
   bossActive := FALSE; bossHealth := 0; bossMaxHealth := 0; bossPhase := 0;
   state := Playing;
   Audio.SetMusic(TRUE);
-  Audio.StartTrack(selectedTrack);
+  Audio.StartTrack(selectedTrack); musicTimer := 0;
   IF gameMode = BossRushMode THEN Audio.SetIntensity(2) ELSE Audio.SetIntensity(1) END;
   Audio.Play(Audio.StartJingle)
 END StartGame;
@@ -829,7 +836,7 @@ BEGIN
       wave := 3 + bossesDefeated*3;
       waveTimer := 0;
       spawnTimer := 9999;
-      Audio.ShuffleTrack;
+      RotateMusic;
       Audio.SetIntensity(MinC(3, 2 + bossesDefeated DIV 4))
     END
   ELSIF (gameMode = CampaignMode) AND (wave >= 24) THEN
@@ -840,7 +847,7 @@ BEGIN
     INC(wave);
     waveTimer := 0;
     spawnTimer := 84;
-    Audio.ShuffleTrack;
+    RotateMusic;
     IF (gameMode = TimeAttackMode) AND ((bossesDefeated MOD 2) = 0) AND
        (player.lives < 4) THEN INC(player.lives) END;
     Audio.SetIntensity(MinC(3, wave DIV 4))
@@ -1020,6 +1027,8 @@ BEGIN
   IF Input.Pressed(Input.Back) OR Input.Pressed(Input.Pause) THEN
     state := Paused; Audio.Play(Audio.MenuBlip); RETURN
   END;
+  INC(musicTimer);
+  IF musicTimer >= 4500 THEN RotateMusic END;
   UpdatePlayer;
   UpdateShots;
   UpdateEnemies;
@@ -1056,8 +1065,9 @@ BEGIN
   shake := 0; flash := 0; sectorBanner := 0;
   bossActive := FALSE; bossKind := 0; bossPhase := 0; bossesDefeated := 0;
   selectedMode := CampaignMode; gameMode := CampaignMode;
-  selectedShip := 0; selectedModifier := 0; selectedTrack := 6;
+  selectedShip := 0; selectedModifier := 0; selectedTrack := Audio.ShuffleChoice;
   hangarRow := 0; modeIsHost := TRUE; ipCursor := 0; ipTyping := 0;
+  settingsTab := 0; settingsRow := 0; settingsSaveError := FALSE; musicTimer := 0;
   lanError := FALSE;
   ipOctets[0] := 192; ipOctets[1] := 168;
   ipOctets[2] := 1; ipOctets[3] := 2;
@@ -1065,11 +1075,84 @@ BEGIN
   EnterTitle
 END Init;
 
+PROCEDURE ApplyDisplay;
+BEGIN
+  IF (Settings.Get(Settings.Fullscreen) = 1) # Platform.IsFullscreen() THEN
+    Platform.ToggleFullscreen
+  END
+END ApplyDisplay;
+
+PROCEDURE UpdateSettings;
+VAR option : Settings.Option; rows, value : CARDINAL; saved : BOOLEAN;
+BEGIN
+  IF settingsReturn = LanPlaying THEN Arena.Update END;
+  IF Input.Pressed(Input.Options) OR Input.Pressed(Input.Back) OR
+     Input.Pressed(Input.Cancel) OR Input.Pressed(Input.Menu) THEN
+    saved := Settings.Save();
+    IF (NOT saved) AND NOT settingsSaveError THEN
+      settingsSaveError := TRUE; Audio.Play(Audio.MenuBlip); RETURN
+    END;
+    settingsSaveError := NOT saved;
+    state := settingsReturn;
+    IF state = LanPlaying THEN Arena.SetLocalMenu(FALSE) END;
+    Audio.Play(Audio.MenuBlip); RETURN
+  END;
+  IF Input.Pressed(Input.AltFire) THEN
+    settingsTab := (settingsTab+1) MOD 2; settingsRow := 0;
+    Audio.Play(Audio.MenuBlip)
+  END;
+  IF settingsTab = 0 THEN rows := 6 ELSE rows := 5 END;
+  IF Input.MenuStep(Input.Up) THEN settingsRow := (settingsRow+rows-1) MOD rows
+  ELSIF Input.MenuStep(Input.Down) THEN settingsRow := (settingsRow+1) MOD rows END;
+  IF settingsTab = 0 THEN option := VAL(Settings.Option, settingsRow)
+  ELSIF settingsRow < 4 THEN option := VAL(Settings.Option, settingsRow+6)
+  ELSE option := Settings.Master END;
+  IF (settingsTab = 1) AND (settingsRow = 4) THEN
+    IF Input.Pressed(Input.Fire) OR Input.Pressed(Input.Start) THEN
+      Settings.Defaults; ApplyDisplay; Audio.Play(Audio.MenuBlip)
+    END
+  ELSIF Input.MenuStep(Input.Left) OR Input.MenuStep(Input.Right) OR
+        ((settingsTab = 1) AND (Input.Pressed(Input.Fire) OR Input.Pressed(Input.Start))) THEN
+    value := Settings.Get(option);
+    IF settingsTab = 0 THEN
+      IF Input.MenuStep(Input.Left) THEN
+        IF value < 5 THEN value := 0 ELSE DEC(value, 5) END
+      ELSE
+        IF value > 95 THEN value := 100 ELSE INC(value, 5) END
+      END
+    ELSE value := 1-value END;
+    Settings.Set(option, value); ApplyDisplay;
+    Audio.Play(Audio.MenuBlip)
+  END
+END UpdateSettings;
+
+PROCEDURE UpdateLanMusic;
+BEGIN
+  IF Arena.Connected() AND (NOT Arena.Finished()) AND (NOT Arena.IsPaused()) THEN
+    INC(musicTimer);
+    IF musicTimer >= 4500 THEN RotateMusic END
+  END;
+  IF Arena.MusicStage() # lanMusicStage THEN
+    lanMusicStage := Arena.MusicStage();
+    IF selectedMode = LanCoopMode THEN
+      Audio.SetIntensity(MinC(3, 1 + lanMusicStage DIV 3))
+    END;
+    IF Arena.Connected() AND (NOT Arena.Finished()) THEN RotateMusic END
+  END
+END UpdateLanMusic;
+
 PROCEDURE Update;
 VAR digit : INTEGER; step, candidate : CARDINAL;
 BEGIN
   INC(tick);
   UpdateStars;
+  IF (state # SettingsMenu) AND Input.Pressed(Input.Options) THEN
+    settingsReturn := state;
+    IF state = Playing THEN settingsReturn := Paused END;
+    IF state = LanPlaying THEN Arena.SetLocalMenu(TRUE) END;
+    state := SettingsMenu; settingsSaveError := FALSE;
+    Audio.Play(Audio.MenuBlip); RETURN
+  END;
   CASE state OF
     Title:
       UpdateParticles;
@@ -1123,14 +1206,9 @@ BEGIN
           IF Input.MenuStep(Input.Left) THEN selectedModifier := (selectedModifier+6) MOD 7
           ELSE selectedModifier := (selectedModifier+1) MOD 7 END
         ELSE
-          IF Input.MenuStep(Input.Left) THEN selectedTrack := (selectedTrack+6) MOD 7
-          ELSE selectedTrack := (selectedTrack+1) MOD 7 END;
-          IF selectedTrack = 6 THEN Audio.SetMusicMode(Audio.ThemeTrack)
-          ELSE
-            Audio.SetTrack(selectedTrack);
-            IF selectedTrack = 5 THEN Audio.SetMusicMode(Audio.ThemeTrack)
-            ELSE Audio.SetMusicMode(Audio.SynthTrack) END
-          END;
+          IF Input.MenuStep(Input.Left) THEN selectedTrack := (selectedTrack+Audio.TrackCount) MOD (Audio.TrackCount+1)
+          ELSE selectedTrack := (selectedTrack+1) MOD (Audio.TrackCount+1) END;
+          Audio.PreviewTrack(selectedTrack);
           Audio.SetIntensity(1)
         END;
         Audio.Play(Audio.MenuBlip)
@@ -1192,31 +1270,26 @@ BEGIN
           state := LanPlaying;
           lanError := FALSE; flash := 0;
           lanMusicStage := Arena.MusicStage();
-          Audio.StartTrack(selectedTrack);
+          Audio.StartTrack(selectedTrack); musicTimer := 0;
           IF selectedMode = LanCoopMode THEN Audio.SetIntensity(1)
           ELSE Audio.SetIntensity(2) END
         ELSE lanError := TRUE END
       END
   | LanPlaying:
-      IF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) THEN
+      IF Input.Pressed(Input.Menu) OR Input.Pressed(Input.Back) OR
+         (Arena.Finished() AND Input.Pressed(Input.Cancel)) THEN
         Arena.Close; EnterTitle
       ELSE
+        IF Input.Pressed(Input.Pause) OR Input.Pressed(Input.Start) THEN Arena.TogglePause END;
         Arena.Update;
-        IF Arena.MusicStage() # lanMusicStage THEN
-          lanMusicStage := Arena.MusicStage();
-          IF selectedMode = LanCoopMode THEN
-            Audio.SetIntensity(MinC(3, 1 + lanMusicStage DIV 3))
-          END;
-          IF Arena.Connected() AND (NOT Arena.Finished()) AND
-             ((selectedMode = LanVersusMode) OR ((lanMusicStage MOD 2) = 1)) THEN
-            Audio.ShuffleTrack
-          END
-        END;
+        UpdateLanMusic;
         IF Arena.Finished() AND
            (Input.Pressed(Input.Start) OR Input.Pressed(Input.Fire)) THEN
           Arena.Close; EnterTitle
         END
       END
+  | SettingsMenu:
+      UpdateSettings
   | Playing:
       UpdatePlaying
   | Paused:
@@ -1340,7 +1413,10 @@ BEGIN
   | 3 : FrameBuffer.DrawText(x, y, "EVENT HORIZON", colour, 1)
   | 4 : FrameBuffer.DrawText(x, y, "AFTERBURN", colour, 1)
   | 5 : FrameBuffer.DrawText(x, y, "ENDLESS ENDEAVOR", colour, 1)
-  ELSE FrameBuffer.DrawText(x, y, "SHUFFLE ALL SIX", colour, 1)
+  | 6 : FrameBuffer.DrawText(x, y, "SOLAR WAKE", colour, 1)
+  | 7 : FrameBuffer.DrawText(x, y, "CRYSTAL CIRCUIT", colour, 1)
+  | 8 : FrameBuffer.DrawText(x, y, "STARLIGHT RELAY", colour, 1)
+  ELSE FrameBuffer.DrawText(x, y, "SHUFFLE / NO REPEATS", colour, 1)
   END
 END TrackLabel;
 
@@ -1578,25 +1654,27 @@ BEGIN
   high := Audio.ThemeMeter(3);
   Visuals.DrawMusicTag(14, 167, low, lowMid, highMid, high);
   FrameBuffer.DrawText(44, 169, "ENDLESS ENDEAVOR", 12, 1);
-  Visuals.DrawHint(205, 167, Visuals.MenuHint, "HELP", 5);
+  Visuals.DrawHint(147, 167, Visuals.SettingsHint, "SETTINGS", 12);
+  Visuals.DrawHint(223, 167, Visuals.MenuHint, "HELP", 5);
   Visuals.DrawHint(263, 167, Visuals.CancelHint, "QUIT", 5)
 END DrawTitle;
 
 PROCEDURE DrawControls;
 BEGIN
   Visuals.DrawLogo(tick);
-  Visuals.DrawPanel(23, 72, 274, 91, TRUE);
-  CenterTextBox(23, 274, 80, "FLIGHT CONTROLS", 12, 1);
-  FrameBuffer.HLine(34, 286, 91, 4);
-  Visuals.DrawHint(37, 98, Visuals.MoveHint, "MOVE", 12);
-  Visuals.DrawHint(177, 98, Visuals.NavigateHint, "MENUS", 12);
-  Visuals.DrawHint(37, 112, Visuals.FireHint, "FIRE", 19);
-  Visuals.DrawHint(177, 112, Visuals.PulseHint, "PULSE", 19);
-  Visuals.DrawHint(37, 126, Visuals.PauseHint, "PAUSE", 12);
-  Visuals.DrawHint(177, 126, Visuals.MenuHint, "MENU", 12);
-  Visuals.DrawHint(37, 140, Visuals.FullscreenHint, "FULL", 6);
-  Visuals.DrawHint(177, 140, Visuals.CancelHint, "BACK", 6);
-  CenterTextBox(23, 274, 152, "HINTS FOLLOW THE LAST DEVICE USED", 5, 1)
+  Visuals.DrawPanel(23, 62, 274, 101, TRUE);
+  CenterTextBox(23, 274, 70, "FLIGHT CONTROLS", 12, 1);
+  FrameBuffer.HLine(34, 286, 81, 4);
+  Visuals.DrawHint(37, 87, Visuals.MoveHint, "MOVE", 12);
+  Visuals.DrawHint(177, 87, Visuals.NavigateHint, "MENUS", 12);
+  Visuals.DrawHint(37, 101, Visuals.FireHint, "FIRE", 19);
+  Visuals.DrawHint(177, 101, Visuals.PulseHint, "PULSE", 19);
+  Visuals.DrawHint(37, 115, Visuals.PauseHint, "PAUSE", 12);
+  Visuals.DrawHint(177, 115, Visuals.MenuHint, "MENU", 12);
+  Visuals.DrawHint(37, 129, Visuals.FullscreenHint, "FULL", 6);
+  Visuals.DrawHint(177, 129, Visuals.CancelHint, "BACK", 6);
+  Visuals.DrawHint(37, 143, Visuals.SettingsHint, "SETTINGS", 12);
+  FrameBuffer.DrawText(177, 145, "HINTS FOLLOW DEVICE", 5, 1)
 END DrawControls;
 
 PROCEDURE DrawHangar;
@@ -1607,7 +1685,7 @@ BEGIN
   FrameBuffer.HLine(28, 291, 92, 4);
   IF hangarRow = 0 THEN FrameBuffer.Rect(27, 98, 181, 12, 12) END;
   IF hangarRow = 1 THEN FrameBuffer.Rect(27, 116, 181, 12, 12) END;
-  IF hangarRow = 2 THEN FrameBuffer.Rect(27, 134, 181, 12, 12) END;
+  IF hangarRow = 2 THEN FrameBuffer.Rect(27, 134, 204, 12, 12) END;
   FrameBuffer.DrawText(34, 100, "SHIP", 6, 1);
   ShipLabel(100, 100, 19);
   FrameBuffer.DrawText(34, 118, "MOD", 6, 1);
@@ -1654,10 +1732,10 @@ BEGIN
                FrameBuffer.DrawText(34, 150, "MORE DAMAGE / SLOW FIRE", 5, 1)
              END
         END
-  ELSE IF selectedTrack = 6 THEN
-         FrameBuffer.DrawText(34, 150, "RANDOM START / ROTATE AFTER BOSSES", 5, 1)
+  ELSE IF selectedTrack = Audio.ShuffleChoice THEN
+         FrameBuffer.DrawText(34, 150, "FULL ROSTER / RARE MENU THEME", 5, 1)
        ELSE
-         FrameBuffer.DrawText(34, 150, "FIRST TRACK / THEN SHUFFLE ALL SIX", 5, 1)
+         FrameBuffer.DrawText(34, 150, "CHOSEN OPENER / THEN NO REPEATS", 5, 1)
        END
   END;
   DrawMenuFooter;
@@ -1705,11 +1783,12 @@ END DrawLanSetup;
 
 PROCEDURE DrawPause;
 BEGIN
-  Visuals.DrawPanel(82, 50, 156, 80, TRUE);
+  Visuals.DrawPanel(82, 45, 156, 99, TRUE);
   CenterTextBox(82, 156, 62, "MISSION PAUSED", 12, 1);
   Visuals.CenterHint(82, 156, 82, Visuals.PauseHint, "RESUME", 8);
   Visuals.CenterHint(82, 156, 96, Visuals.MenuHint, "MAIN MENU", 12);
-  Visuals.CenterHint(82, 156, 110, Visuals.FullscreenHint, "FULLSCREEN", 5)
+  Visuals.CenterHint(82, 156, 110, Visuals.SettingsHint, "SETTINGS", 12);
+  Visuals.CenterHint(82, 156, 124, Visuals.FullscreenHint, "FULLSCREEN", 5)
 END DrawPause;
 
 PROCEDURE DrawGameOver;
@@ -1742,6 +1821,76 @@ BEGIN
   CardText(score, buf, 6); CenterTextBox(56, 208, 103, buf, 19, 2);
   Visuals.CenterHint(56, 208, 125, Visuals.ConfirmHint, "MAIN MENU", 12)
 END DrawVictory;
+
+PROCEDURE SettingLabel(x, y : INTEGER; option : Settings.Option; colour : CARDINAL);
+BEGIN
+  CASE option OF
+    Settings.Master: FrameBuffer.DrawText(x, y, "MASTER", colour, 1)
+  | Settings.Music: FrameBuffer.DrawText(x, y, "MUSIC", colour, 1)
+  | Settings.Weapons: FrameBuffer.DrawText(x, y, "WEAPONS", colour, 1)
+  | Settings.Impacts: FrameBuffer.DrawText(x, y, "IMPACTS", colour, 1)
+  | Settings.Alerts: FrameBuffer.DrawText(x, y, "ALERTS / PICKUPS", colour, 1)
+  | Settings.Interface: FrameBuffer.DrawText(x, y, "MENU SOUNDS", colour, 1)
+  | Settings.Fullscreen: FrameBuffer.DrawText(x, y, "FULLSCREEN", colour, 1)
+  | Settings.PixelScale: FrameBuffer.DrawText(x, y, "PIXEL SCALE", colour, 1)
+  | Settings.ScreenShake: FrameBuffer.DrawText(x, y, "SCREEN SHAKE", colour, 1)
+  | Settings.HitFlashes: FrameBuffer.DrawText(x, y, "HIT FLASHES", colour, 1)
+  END
+END SettingLabel;
+
+PROCEDURE DrawSettings;
+VAR i, rows, value, colour : CARDINAL; y : INTEGER;
+    option : Settings.Option; buf : ARRAY [0..15] OF CHAR;
+BEGIN
+  Visuals.DrawPanel(18, 9, 284, 153, TRUE);
+  FrameBuffer.DrawText(32, 19, "FLIGHT SETTINGS", 12, 2);
+  FrameBuffer.DrawText(239, 24, "ION / 2.1", 5, 1);
+  FrameBuffer.FillRect(29, 39, 128, 13, 2);
+  FrameBuffer.FillRect(163, 39, 128, 13, 2);
+  IF settingsTab = 0 THEN FrameBuffer.Rect(29, 39, 128, 13, 12)
+  ELSE FrameBuffer.Rect(163, 39, 128, 13, 12) END;
+  CenterTextBox(29, 128, 43, "AUDIO MIX", 19, 1);
+  CenterTextBox(163, 128, 43, "DISPLAY / EFFECTS", 12, 1);
+  IF settingsTab = 0 THEN rows := 6 ELSE rows := 5 END;
+  FOR i := 0 TO rows-1 DO
+    y := 59+VAL(INTEGER,i)*13;
+    colour := 6;
+    IF i = settingsRow THEN
+      FrameBuffer.FillRect(29, y-2, 262, 12, 2);
+      FrameBuffer.VLine(29, y-2, y+9, 12); colour := 8;
+      FrameBuffer.DrawText(280, y, ">", 12, 1)
+    END;
+    IF (settingsTab = 1) AND (i = 4) THEN
+      FrameBuffer.DrawText(38, y, "RESTORE DEFAULTS", colour, 1);
+      Visuals.DrawHint(219, y-2, Visuals.ConfirmHint, "RESET", 5)
+    ELSE
+      IF settingsTab = 0 THEN option := VAL(Settings.Option,i)
+      ELSE option := VAL(Settings.Option,i+6) END;
+      SettingLabel(38, y, option, colour);
+      value := Settings.Get(option);
+      IF settingsTab = 0 THEN
+        FrameBuffer.FillRect(143, y+1, 85, 4, 3);
+        IF value > 0 THEN FrameBuffer.FillRect(143, y+1, VAL(INTEGER,value*85 DIV 100), 4, 12) END;
+        CardText(value, buf, 1); FrameBuffer.DrawText(238, y, buf, 19, 1);
+        FrameBuffer.DrawText(259, y, "%", 5, 1)
+      ELSIF option = Settings.PixelScale THEN
+        IF value = 1 THEN FrameBuffer.DrawText(211, y, "INTEGER", 12, 1)
+        ELSE FrameBuffer.DrawText(211, y, "FIT", 19, 1) END
+      ELSE
+        IF value = 1 THEN FrameBuffer.DrawText(238, y, "ON", 12, 1)
+        ELSE FrameBuffer.DrawText(238, y, "OFF", 5, 1) END
+      END
+    END
+  END;
+  FrameBuffer.HLine(30, 289, 141, 4);
+  IF settingsSaveError THEN CenterTextBox(18, 284, 150, "COULD NOT SAVE / CHANGES STILL APPLY", 16, 1)
+  ELSE CenterTextBox(18, 284, 150, "CHANGES APPLY NOW / SAVED ON CLOSE", 5, 1) END;
+  DrawMenuFooter;
+  Visuals.DrawHint(20, 167, Visuals.MoveHint, "ROW", 6);
+  Visuals.DrawHint(90, 167, Visuals.NavigateHint, "ADJUST", 12);
+  Visuals.DrawHint(177, 167, Visuals.PulseHint, "TAB", 6);
+  Visuals.DrawHint(247, 167, Visuals.CancelHint, "DONE", 19)
+END DrawSettings;
 
 PROCEDURE Draw;
 VAR sx, sy, p : INTEGER; pulse, chapter : CARDINAL;
@@ -1777,7 +1926,9 @@ BEGIN
   DrawNebula;
   DrawStars;
 
-  IF state = Title THEN
+  IF state = SettingsMenu THEN
+    DrawSettings
+  ELSIF state = Title THEN
     DrawTitle
   ELSIF state = Controls THEN
     DrawControls
@@ -1789,21 +1940,22 @@ BEGIN
     Arena.Draw
   ELSE
     sx := 0; sy := 0;
-    IF shake > 0 THEN
+    IF (shake > 0) AND (Settings.Get(Settings.ScreenShake) = 1) THEN
       sx := VAL(INTEGER, (tick*17) MOD (shake+1)) - VAL(INTEGER, shake DIV 2);
       sy := VAL(INTEGER, (tick*11) MOD (shake+1)) - VAL(INTEGER, shake DIV 2)
     END;
     DrawObjects(sx, sy);
     DrawHUD;
     DrawBossBar;
-    DrawBanner;
+    IF state = Playing THEN DrawBanner END;
     IF state = Paused THEN DrawPause
     ELSIF state = GameOver THEN DrawGameOver
     ELSIF state = Victory THEN DrawVictory
     END
   END;
 
-  IF flash > 0 THEN
+  IF (flash > 0) AND (Settings.Get(Settings.HitFlashes) = 1) AND
+     (state # SettingsMenu) THEN
     p := VAL(INTEGER, flash MOD 3);
     FrameBuffer.Rect(p, p, FrameBuffer.Width-p*2, FrameBuffer.Height-p*2, 8)
   END

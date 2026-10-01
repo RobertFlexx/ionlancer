@@ -1,0 +1,13 @@
+DEFINITION MODULE Settings;
+
+TYPE
+  Option = (Master, Music, Weapons, Impacts, Alerts, Interface,
+            Fullscreen, PixelScale, ScreenShake, HitFlashes);
+
+PROCEDURE Init;
+PROCEDURE Defaults;
+PROCEDURE Get(option : Option) : CARDINAL;
+PROCEDURE Set(option : Option; value : CARDINAL);
+PROCEDURE Save() : BOOLEAN;
+
+END Settings.

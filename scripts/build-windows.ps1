@@ -13,7 +13,7 @@ if ($LASTEXITCODE -ne 0) { throw "SDL2 development package was not found by pkg-
 
 $SdlLibs = ((& $PkgConfig --libs sdl2) -join " ") -split '\s+'
 $SdlCflags = ((& $PkgConfig --cflags sdl2) -join " ") -split '\s+'
-$Modules = @("RNG", "FrameBuffer", "Input", "Audio", "Visuals", "Arena", "Game", "Platform")
+$Modules = @("RNG", "FrameBuffer", "Input", "Audio", "Settings", "Visuals", "Arena", "Game", "Platform")
 $BuildDir = Join-Path $Root "build\windows"
 
 if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }

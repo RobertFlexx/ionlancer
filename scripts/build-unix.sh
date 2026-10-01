@@ -112,7 +112,7 @@ rm -rf "$BUILDDIR"
 mkdir -p "$BUILDDIR"
 
 COMMON="-fpim4 -I src -Wall $SDL_CFLAGS"
-MODULES="RNG FrameBuffer Input Audio Visuals Arena Game Platform"
+MODULES="RNG FrameBuffer Input Audio Settings Visuals Arena Game Platform"
 OBJECTS=
 
 "${CC:-cc}" -O2 -c src/LanSocket.c -o "$BUILDDIR/LanSocket.o"

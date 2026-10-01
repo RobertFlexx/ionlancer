@@ -177,6 +177,9 @@ BEGIN
     | ')' : RETURN 4334116
     | '=' : RETURN 57568
     | '*' : RETURN 42144
+    | '%' : RETURN 9781929
+    | '>' : RETURN 4330056
+    | '<' : RETURN 2393121
     | ' ' : RETURN 0
   ELSE
     RETURN 0

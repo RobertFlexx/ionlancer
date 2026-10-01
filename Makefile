@@ -14,7 +14,7 @@ export PKG_CONFIG
 TARGET = ionlancer
 TOOLS = ./scripts/tools.sh
 
-.PHONY: all release portable portable-macos aggressive debug run clean check deps test-lan
+.PHONY: all release portable portable-macos aggressive debug run clean check deps test-lan test-quality
 
 all: release
 
@@ -42,6 +42,9 @@ check:
 
 test-lan: release
 	./tests/test-lan.sh
+
+test-quality: debug
+	sh ./tests/test-quality.sh
 
 deps:
 	@$(TOOLS) deps

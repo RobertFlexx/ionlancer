@@ -15,7 +15,7 @@ mkdir -p "$build" "$dist"
 
 read -r -a cflags <<< "$(pkg-config --cflags sdl2)"
 read -r -a libs <<< "$(pkg-config --libs sdl2)"
-modules=(RNG FrameBuffer Input Audio Visuals Arena Game Platform)
+modules=(RNG FrameBuffer Input Audio Settings Visuals Arena Game Platform)
 objects=()
 gcc -O3 -c src/LanSocket.c -o "$build/LanSocket.o"
 objects+=("$build/LanSocket.o")

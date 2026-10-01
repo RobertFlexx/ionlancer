@@ -6,7 +6,7 @@ IMPORT SDL2, CStdio;
 CONST
   SampleRate = 44100;
   BlockSamples = 1024;
-  QueueTarget = 8192;
+  QueueTarget = 4096;
   AudioS16LSB = 32784;
   MaxVoices = 10;
   MaxCustomSamples = 8;
@@ -23,6 +23,7 @@ TYPE
   Voice = RECORD
     active   : BOOLEAN;
     effect   : Effect;
+    channel  : Channel;
     age      : CARDINAL;
     duration : CARDINAL;
     phase    : CARDINAL;
@@ -36,8 +37,11 @@ VAR
   musicEnabled : BOOLEAN;
   available : BOOLEAN;
   intensity : CARDINAL;
-  masterVolume : CARDINAL;
-  musicClock, leadPhase, bassPhase, arpPhase, padPhase, drumPhase : CARDINAL;
+  volumes, gains : ARRAY Channel OF CARDINAL;
+  initChannel : Channel;
+  playlist : ARRAY [0..TrackCount-1] OF CARDINAL;
+  playlistSize, playlistPos, playlistCycle : CARDINAL;
+  musicStep, musicPos, musicPhrase, leadPhase, bassPhase, arpPhase, padPhase, drumPhase : CARDINAL;
   noiseState : CARDINAL;
   leadPattern, bassPattern, arpPattern, padPattern : ARRAY [0..PatternLen-1] OF CARDINAL;
   sampleData : ARRAY [0..MaxCustomSamples-1] OF ARRAY [0..MaxCustomBytes-1] OF CARDINAL8;
@@ -49,6 +53,7 @@ VAR
   trackStepSamples, cachedStep, cachedPhrase, musicSeed : CARDINAL;
   musicFadeRemaining : CARDINAL;
   cachedLead, cachedBass, cachedArp, cachedPad : CARDINAL;
+  cachedLeadStep, cachedBassStep, cachedArpStep, cachedPadStep : CARDINAL;
   patternValid : BOOLEAN;
   menuTheme : ARRAY [0..MaxThemeSamples-1] OF INTEGER16;
   menuThemeLength, menuThemePos, menuThemeGenerated : CARDINAL;
@@ -72,9 +77,16 @@ BEGIN
 END CopyZ;
 
 PROCEDURE ClampSample(v : INTEGER) : INTEGER16;
+VAR magnitude : INTEGER;
 BEGIN
-  IF v < -32768 THEN RETURN -32768 END;
-  IF v > 32767 THEN RETURN 32767 END;
+  (* Leave ordinary levels untouched; ease loud drums and overlapping effects
+     toward the limit instead of flattening their peaks into distortion. *)
+  IF v < 0 THEN magnitude := -v ELSE magnitude := v END;
+  IF magnitude > 24000 THEN
+    magnitude := magnitude-24000;
+    magnitude := 24000 + magnitude*8767 DIV (magnitude+8767);
+    IF v < 0 THEN v := -magnitude ELSE v := magnitude END
+  END;
   RETURN VAL(INTEGER16, v)
 END ClampSample;
 
@@ -99,39 +111,50 @@ BEGIN
   RETURN ScaleSigned(Noise(), amp, divisor)
 END ScaledNoise;
 
-PROCEDURE Square(VAR phase : CARDINAL; freq : CARDINAL; amp : INTEGER) : INTEGER;
-VAR step : CARDINAL; result : INTEGER;
+PROCEDURE SquareStep(VAR phase : CARDINAL; step : CARDINAL; amp : INTEGER) : INTEGER;
+VAR result : INTEGER;
 BEGIN
-  IF freq = 0 THEN RETURN 0 END;
+  IF step = 0 THEN RETURN 0 END;
   IF phase < 32768 THEN result := amp ELSE result := -amp END;
-  step := (freq * 65536) DIV SampleRate;
   phase := (phase + step) MOD 65536;
   RETURN result
-END Square;
+END SquareStep;
 
-PROCEDURE Triangle(VAR phase : CARDINAL; freq : CARDINAL; amp : INTEGER) : INTEGER;
-VAR p, step : CARDINAL; value : INTEGER;
+PROCEDURE TriangleStep(VAR phase : CARDINAL; step : CARDINAL; amp : INTEGER) : INTEGER;
+VAR p : CARDINAL; value : INTEGER;
 BEGIN
-  IF freq = 0 THEN RETURN 0 END;
+  IF step = 0 THEN RETURN 0 END;
   p := phase;
   IF p < 16384 THEN value := VAL(INTEGER, p)
   ELSIF p < 49152 THEN value := 32768 - VAL(INTEGER, p)
   ELSE value := VAL(INTEGER, p) - 65536
   END;
-  step := (freq * 65536) DIV SampleRate;
   phase := (phase + step) MOD 65536;
   RETURN ScaleSigned(value, amp, 16384)
-END Triangle;
+END TriangleStep;
 
-PROCEDURE Pulse(VAR phase : CARDINAL; freq : CARDINAL; amp : INTEGER) : INTEGER;
-VAR step : CARDINAL; value : INTEGER;
+PROCEDURE PulseStep(VAR phase : CARDINAL; step : CARDINAL; amp : INTEGER) : INTEGER;
+VAR value : INTEGER;
 BEGIN
-  IF freq = 0 THEN RETURN 0 END;
+  IF step = 0 THEN RETURN 0 END;
   IF phase < 16384 THEN value := amp ELSE value := -(amp DIV 3) END;
-  step := (freq * 65536) DIV SampleRate;
   phase := (phase + step) MOD 65536;
   RETURN value
-END Pulse;
+END PulseStep;
+
+PROCEDURE Square(VAR phase : CARDINAL; freq : CARDINAL; amp : INTEGER) : INTEGER;
+BEGIN
+  RETURN SquareStep(phase, freq*65536 DIV SampleRate, amp)
+END Square;
+
+PROCEDURE NoteEnvelope(pos, length : CARDINAL; attack : CARDINAL) : INTEGER;
+VAR remaining : CARDINAL;
+BEGIN
+  IF pos < attack THEN RETURN VAL(INTEGER, pos*100 DIV attack) END;
+  remaining := length-pos;
+  IF remaining < attack*2 THEN RETURN VAL(INTEGER, remaining*100 DIV (attack*2)) END;
+  RETURN 100
+END NoteEnvelope;
 
 PROCEDURE DurationFor(effect : Effect) : CARDINAL;
 BEGIN
@@ -165,6 +188,12 @@ BEGIN
   END;
   voices[slot].active := TRUE;
   voices[slot].effect := effect;
+  CASE effect OF
+    Laser: voices[slot].channel := WeaponChannel
+  | Explosion, Hit, Hurt: voices[slot].channel := ImpactChannel
+  | MenuBlip: voices[slot].channel := InterfaceChannel
+  ELSE voices[slot].channel := AlertChannel
+  END;
   voices[slot].age := 0;
   voices[slot].duration := DurationFor(effect);
   voices[slot].phase := 0;
@@ -218,6 +247,7 @@ BEGIN
   END;
 
   INC(v.age);
+  IF v.age < 64 THEN value := ScaleSigned(value, VAL(INTEGER,v.age),64) END;
   RETURN value * 160
 END VoiceSample;
 
@@ -244,9 +274,7 @@ VAR
   step, pos, phrase : CARDINAL;
   mix, drumAmp, leadAmp : INTEGER;
 BEGIN
-  step := (musicClock DIV trackStepSamples) MOD PatternLen;
-  pos := musicClock MOD trackStepSamples;
-  phrase := (musicClock DIV (trackStepSamples * PatternLen)) MOD 4;
+  step := musicStep; pos := musicPos; phrase := musicPhrase;
 
   IF (NOT patternValid) OR (step # cachedStep) OR (phrase # cachedPhrase) THEN
     cachedStep := step; cachedPhrase := phrase; patternValid := TRUE;
@@ -271,22 +299,27 @@ BEGIN
         cachedBass := PatternAt(bassPattern, step + 24);
         cachedArp := PatternAt(arpPattern, step + 12);
         cachedPad := PatternAt(padPattern, step + 24)
-    END
+    END;
+    cachedLeadStep := cachedLead*65536 DIV SampleRate;
+    cachedBassStep := cachedBass*65536 DIV SampleRate;
+    cachedArpStep := cachedArp*65536 DIV SampleRate;
+    cachedPadStep := cachedPad*65536 DIV SampleRate
   END;
 
-  mix := Triangle(bassPhase, cachedBass, 13 + VAL(INTEGER, intensity));
-  mix := mix + Triangle(padPhase, cachedPad, 3 + VAL(INTEGER, intensity DIV 2));
+  mix := ScaleSigned(TriangleStep(bassPhase, cachedBassStep,
+                       13 + VAL(INTEGER, intensity)), NoteEnvelope(pos, trackStepSamples, 96), 100);
+  mix := mix + TriangleStep(padPhase, cachedPadStep, 3 + VAL(INTEGER, intensity DIV 2));
 
   IF intensity >= 1 THEN
     leadAmp := 7 + VAL(INTEGER, intensity);
     IF pos > trackStepSamples*3 DIV 4 THEN leadAmp := leadAmp DIV 3 END;
-    mix := mix + Pulse(leadPhase, cachedLead, leadAmp)
+    mix := mix + ScaleSigned(PulseStep(leadPhase, cachedLeadStep, leadAmp),
+                             NoteEnvelope(pos, trackStepSamples, 64), 100)
   END;
   IF intensity >= 2 THEN
-    mix := mix + Square(arpPhase, cachedArp, 3 + VAL(INTEGER, intensity DIV 2))
-  END;
-  IF (intensity >= 3) AND ((step MOD 8) >= 4) THEN
-    mix := mix + Triangle(padPhase, cachedPad, 2)
+    mix := mix + ScaleSigned(SquareStep(arpPhase, cachedArpStep,
+                               3 + VAL(INTEGER, intensity DIV 2)),
+                             NoteEnvelope(pos, trackStepSamples, 48), 100)
   END;
 
   IF ((step MOD 8) = 0) AND (pos < 980) THEN
@@ -304,7 +337,13 @@ BEGIN
     mix := mix + ScaledNoise(drumAmp, 5)
   END;
 
-  INC(musicClock);
+  INC(musicPos);
+  IF musicPos >= trackStepSamples THEN
+    musicPos := 0; INC(musicStep);
+    IF musicStep >= PatternLen THEN
+      musicStep := 0; musicPhrase := (musicPhrase+1) MOD 4
+    END
+  END;
   RETURN mix * 125
 END SynthMusicSample;
 
@@ -371,15 +410,28 @@ BEGIN
 END CustomSampleMix;
 
 PROCEDURE FillBlock;
-VAR i, v : CARDINAL; mix : INTEGER;
+VAR i, v : CARDINAL; mix : INTEGER; channel : Channel; target : CARDINAL;
 BEGIN
   FOR i := 0 TO BlockSamples-1 DO
-    mix := MusicSample();
-    FOR v := 0 TO MaxVoices-1 DO
-      mix := mix + VoiceSample(voices[v])
+    FOR channel := MasterChannel TO InterfaceChannel DO
+      target := volumes[channel]*256;
+      IF gains[channel] < target THEN
+        IF target-gains[channel] > 16 THEN INC(gains[channel], 16)
+        ELSE gains[channel] := target END
+      ELSIF gains[channel] > target THEN
+        IF gains[channel]-target > 16 THEN DEC(gains[channel], 16)
+        ELSE gains[channel] := target END
+      END
     END;
-    mix := mix + CustomSampleMix();
-    mix := ScaleSigned(mix, VAL(INTEGER, masterVolume), 100);
+    mix := ScaleSigned(MusicSample(), VAL(INTEGER, gains[MusicChannel]), 25600);
+    FOR v := 0 TO MaxVoices-1 DO
+      IF voices[v].active THEN
+        mix := mix + ScaleSigned(VoiceSample(voices[v]),
+                       VAL(INTEGER, gains[voices[v].channel]), 25600)
+      END
+    END;
+    mix := mix + ScaleSigned(CustomSampleMix(), VAL(INTEGER, gains[ImpactChannel]), 25600);
+    mix := ScaleSigned(mix, VAL(INTEGER, gains[MasterChannel]), 25600);
     buffer[i] := ClampSample(mix)
   END
 END FillBlock;
@@ -428,17 +480,20 @@ VAR i, note, root : CARDINAL;
     scale : ARRAY [0..7] OF CARDINAL;
     roots : ARRAY [0..3] OF CARDINAL;
 BEGIN
-  IF track > 5 THEN track := 0 END;
+  IF track >= TrackCount THEN track := 0 END;
   soundtrack := track;
   CASE track OF
     1 : trackStepSamples := 3308
   | 2 : trackStepSamples := 5513
   | 3 : trackStepSamples := 4410
   | 4 : trackStepSamples := 3675
+  | 6 : trackStepSamples := 4257
+  | 7 : trackStepSamples := 3445
+  | 8 : trackStepSamples := 4725
   ELSE trackStepSamples := 4009
   END;
   patternValid := FALSE;
-  IF track = 5 THEN RETURN END;
+  IF track = ThemeSong THEN RETURN END;
   InitPatterns;
   IF track # 0 THEN
     CASE track OF
@@ -454,6 +509,18 @@ BEGIN
           scale[0] := 262; scale[1] := 311; scale[2] := 392; scale[3] := 466;
           scale[4] := 523; scale[5] := 622; scale[6] := 784; scale[7] := 932;
           roots[0] := 131; roots[1] := 104; roots[2] := 116; roots[3] := 98
+    | 6 : (* Solar Wake: D minor, warm rising lead over a rolling bass. *)
+          scale[0] := 294; scale[1] := 330; scale[2] := 349; scale[3] := 440;
+          scale[4] := 523; scale[5] := 587; scale[6] := 698; scale[7] := 880;
+          roots[0] := 147; roots[1] := 116; roots[2] := 131; roots[3] := 110
+    | 7 : (* Crystal Circuit: F minor, syncopated glassy arpeggios. *)
+          scale[0] := 349; scale[1] := 415; scale[2] := 466; scale[3] := 523;
+          scale[4] := 622; scale[5] := 698; scale[6] := 831; scale[7] := 1047;
+          roots[0] := 175; roots[1] := 139; roots[2] := 156; roots[3] := 131
+    | 8 : (* Starlight Relay: B minor, spacious call and response. *)
+          scale[0] := 247; scale[1] := 294; scale[2] := 330; scale[3] := 370;
+          scale[4] := 440; scale[5] := 494; scale[6] := 587; scale[7] := 740;
+          roots[0] := 123; roots[1] := 98; roots[2] := 147; roots[3] := 110
     ELSE (* Afterburn: bright G major finale. *)
           scale[0] := 392; scale[1] := 440; scale[2] := 494; scale[3] := 587;
           scale[4] := 659; scale[5] := 784; scale[6] := 880; scale[7] := 988;
@@ -510,6 +577,42 @@ BEGIN
             END;
             IF (i MOD 8) = 1 THEN leadPattern[i] := 0
             ELSE leadPattern[i] := scale[(note + i DIV 8) MOD 8] END
+      | 6 : CASE i MOD 8 OF
+              0 : note := 0
+            | 1 : note := 2
+            | 2 : note := 3
+            | 3 : note := 4
+            | 4 : note := 5
+            | 5 : note := 3
+            | 6 : note := 2
+            ELSE note := 1
+            END;
+            IF (i MOD 8) = 7 THEN leadPattern[i] := 0
+            ELSE leadPattern[i] := scale[(note + i DIV 16) MOD 8] END
+      | 7 : CASE i MOD 8 OF
+              0 : note := 5
+            | 1 : note := 2
+            | 2 : note := 4
+            | 3 : note := 3
+            | 4 : note := 6
+            | 5 : note := 4
+            | 6 : note := 2
+            ELSE note := 0
+            END;
+            IF (i MOD 8) = 2 THEN leadPattern[i] := 0
+            ELSE leadPattern[i] := scale[note] END
+      | 8 : CASE i MOD 8 OF
+              0 : note := 0
+            | 1 : note := 2
+            | 2 : note := 4
+            | 3 : note := 5
+            | 4 : note := 6
+            | 5 : note := 5
+            | 6 : note := 3
+            ELSE note := 1
+            END;
+            IF ((i MOD 8) = 1) OR ((i MOD 8) = 6) THEN leadPattern[i] := 0
+            ELSE leadPattern[i] := scale[note] END
       ELSE CASE i MOD 8 OF
              0 : note := 0
            | 1 : note := 2
@@ -525,7 +628,7 @@ BEGIN
       END
     END
   END;
-  musicClock := 0;
+  musicStep := 0; musicPos := 0; musicPhrase := 0;
   leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0;
   IF available AND (musicMode = SynthTrack) THEN SDL2.SDL_ClearQueuedAudio(device) END
 END SetTrack;
@@ -576,18 +679,20 @@ BEGIN
 END LoadThemeVisualizer;
 
 PROCEDURE Init() : BOOLEAN;
-VAR desired, obtained : SDL2.SDL_AudioSpec; i : CARDINAL;
+VAR desired, obtained : SDL2.SDL_AudioSpec; i : CARDINAL; channel : Channel;
 BEGIN
   available := FALSE;
   device := 0;
   FOR i := 0 TO MaxVoices-1 DO voices[i].active := FALSE END;
   FOR i := 0 TO MaxCustomSamples-1 DO sampleLength[i] := 0 END;
   FOR i := 0 TO MaxSampleVoices-1 DO sampleActive[i] := FALSE END;
-  musicClock := 0; leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0;
+  musicStep := 0; musicPos := 0; musicPhrase := 0; leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0;
   menuThemeGenerated := 0;
   noiseState := 31741;
   intensity := 0;
-  masterVolume := 68;
+  FOR channel := MasterChannel TO InterfaceChannel DO
+    gains[channel] := volumes[channel]*256
+  END;
   musicEnabled := TRUE;
   musicMode := SynthTrack;
   soundtrack := 0;
@@ -595,6 +700,7 @@ BEGIN
   patternValid := FALSE;
   musicSeed := VAL(CARDINAL, SDL2.SDL_GetTicks()) MOD 65521;
   musicFadeRemaining := 0;
+  playlistSize := 0; playlistPos := 0; playlistCycle := musicSeed MOD 4;
   InitPatterns;
   LoadTheme;
   LoadThemeVisualizer;
@@ -642,6 +748,10 @@ END SetMusic;
 
 PROCEDURE SetMusicMode(mode : MusicMode);
 BEGIN
+  IF (mode = ThemeTrack) AND NOT menuThemeLoaded THEN
+    IF soundtrack = ThemeSong THEN SetTrack(0) END;
+    mode := SynthTrack
+  END;
   IF musicMode # mode THEN
     IF available THEN SDL2.SDL_ClearQueuedAudio(device) END;
     musicMode := mode;
@@ -649,7 +759,7 @@ BEGIN
       menuThemePos := 0;
       menuThemeGenerated := 0
     ELSIF mode = SynthTrack THEN
-      musicClock := 0; leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0;
+      musicStep := 0; musicPos := 0; musicPhrase := 0; leadPhase := 0; bassPhase := 0; arpPhase := 0; padPhase := 0; drumPhase := 0;
       patternValid := FALSE
     END
   END
@@ -661,21 +771,60 @@ BEGIN
   RETURN musicSeed
 END NextMusicNumber;
 
-PROCEDURE StartTrack(choice : CARDINAL);
+PROCEDURE BuildPlaylist;
+VAR i, j, swap : CARDINAL;
 BEGIN
-  IF choice > 5 THEN choice := NextMusicNumber() MOD 6 END;
+  playlistSize := 0; playlistPos := 0;
+  FOR i := 0 TO TrackCount-1 DO
+    IF (i # ThemeSong) OR (menuThemeLoaded AND ((playlistCycle MOD 4) = 0)) THEN
+      playlist[playlistSize] := i; INC(playlistSize)
+    END
+  END;
+  INC(playlistCycle);
+  FOR i := playlistSize-1 TO 1 BY -1 DO
+    j := NextMusicNumber() MOD (i+1);
+    swap := playlist[i]; playlist[i] := playlist[j]; playlist[j] := swap
+  END;
+  IF playlist[0] = soundtrack THEN
+    swap := playlist[0]; playlist[0] := playlist[1]; playlist[1] := swap
+  END
+END BuildPlaylist;
+
+PROCEDURE PreviewTrack(choice : CARDINAL);
+BEGIN
+  IF choice >= TrackCount THEN SetMusicMode(ThemeTrack); RETURN END;
   SetTrack(choice);
-  IF choice = 5 THEN SetMusicMode(ThemeTrack)
+  IF choice = ThemeSong THEN SetMusicMode(ThemeTrack)
   ELSE SetMusicMode(SynthTrack) END;
   musicFadeRemaining := MusicFadeSamples
-END StartTrack;
+END PreviewTrack;
 
 PROCEDURE ShuffleTrack;
 VAR next : CARDINAL;
 BEGIN
-  next := (soundtrack + 1 + NextMusicNumber() MOD 5) MOD 6;
-  StartTrack(next)
+  IF playlistPos >= playlistSize THEN BuildPlaylist END;
+  next := playlist[playlistPos]; INC(playlistPos);
+  PreviewTrack(next)
 END ShuffleTrack;
+
+PROCEDURE StartTrack(choice : CARDINAL);
+VAR i : CARDINAL;
+BEGIN
+  IF (choice = ThemeSong) AND NOT menuThemeLoaded THEN choice := 0 END;
+  BuildPlaylist;
+  IF choice >= TrackCount THEN ShuffleTrack; RETURN END;
+  (* A chosen opener is consumed from this bag as well. *)
+  FOR i := 0 TO playlistSize-1 DO
+    IF playlist[i] = choice THEN
+      playlist[i] := playlist[0]; playlist[0] := choice;
+      playlistPos := 1
+    END
+  END;
+  PreviewTrack(choice)
+END StartTrack;
+
+PROCEDURE CurrentTrack() : CARDINAL;
+BEGIN RETURN soundtrack END CurrentTrack;
 
 PROCEDURE SetIntensity(level : CARDINAL);
 BEGIN
@@ -683,11 +832,17 @@ BEGIN
   intensity := level
 END SetIntensity;
 
-PROCEDURE SetMasterVolume(volume : CARDINAL);
+PROCEDURE SetVolume(channel : Channel; volume : CARDINAL);
 BEGIN
   IF volume > 100 THEN volume := 100 END;
-  masterVolume := volume
-END SetMasterVolume;
+  volumes[channel] := volume
+END SetVolume;
+
+PROCEDURE GetVolume(channel : Channel) : CARDINAL;
+BEGIN RETURN volumes[channel] END GetVolume;
+
+PROCEDURE SetMasterVolume(volume : CARDINAL);
+BEGIN SetVolume(MasterChannel, volume) END SetMasterVolume;
 
 PROCEDURE IsAvailable() : BOOLEAN;
 BEGIN
@@ -699,7 +854,9 @@ VAR
   queuedSamples, playedSamples, meterSamplePos, loopLength : CARDINAL;
   frame, index : CARDINAL;
 BEGIN
-  IF (band > 3) OR (NOT available) OR (NOT menuThemeLoaded) OR
+  IF (band > 3) OR (NOT available) OR (NOT musicEnabled) OR
+     (musicMode # ThemeTrack) OR (volumes[MasterChannel] = 0) OR
+     (volumes[MusicChannel] = 0) OR (NOT menuThemeLoaded) OR
      (NOT menuThemeVisLoaded) OR (menuThemeLength = 0) THEN RETURN 0 END;
 
   queuedSamples := VAL(CARDINAL, SDL2.SDL_GetQueuedAudioSize(device)) DIV 2;
@@ -729,12 +886,16 @@ BEGIN
   device := 0;
   musicEnabled := TRUE;
   intensity := 0;
-  masterVolume := 68;
+  FOR initChannel := MasterChannel TO InterfaceChannel DO
+    volumes[initChannel] := 100; gains[initChannel] := 25600
+  END;
+  volumes[MasterChannel] := 68;
   musicMode := SynthTrack;
   soundtrack := 0;
   trackStepSamples := 4009;
   patternValid := FALSE;
   musicSeed := 371;
+  playlistSize := 0; playlistPos := 0; playlistCycle := 0;
   musicFadeRemaining := 0;
   noiseState := 31741;
   menuThemeLength := 0;
